@@ -296,6 +296,38 @@ Spark cold start in Docker is the slowest piece. Keeping the spark container
 running (it does by default — `tail -f /dev/null`) means second and later
 ingests are warm-start fast.
 
+## Going to production — translating your own DDL
+
+The local stack uses a small synthetic schema (`local/postgres/init.sql`)
+to exercise strata end-to-end. When you're ready to point strata at a
+real data mart, you'll need a `tables.yaml` describing every source
+table, and you may need seed data for the tables that aren't populated
+by the DDL itself.
+
+Three tools in the repo make this a guided process rather than from-scratch
+authoring:
+
+**[`local/scripts/ddl_to_yaml.py`](../local/scripts/ddl_to_yaml.py)** —
+parses CREATE TABLE statements from one or more `.sql` files and
+emits a draft `tables.yaml` with mechanical fields filled in (table
+name, primary key, candidate watermark column, candidate partition
+column) and TODO markers on the judgment fields (`domain`,
+`partition_spec` refinement, `sort_order`). Pure Python, no Docker.
+Supports `--merge` for incremental updates when the DDL evolves.
+
+**[`examples/seed_full_datamart.py`](../examples/seed_full_datamart.py)** —
+synthetic-data seeder for the production-shape schema. Populates
+`dim_account`, `dim_currency`, and the four fact tables with
+realistic synthetic data while skipping the dimensions that are
+seeded by INSERT statements in the DDL itself. Idempotent on dims,
+configurable volumes via `--days`, `--accounts`, `--txns-per-day`.
+
+**[`docs/translating-ddl-to-yaml.md`](../docs/translating-ddl-to-yaml.md)** —
+step-by-step workflow for the office-laptop scenario where the DDL
+must stay local. Covers extraction, AI-assisted TODO resolution
+(via `@workspace /add-table` in Copilot Chat), validation, and the
+recurring `--merge` flow.
+
 ## Troubleshooting
 
 The full table of known failure modes (with mechanical causes and exact

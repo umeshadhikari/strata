@@ -1,0 +1,340 @@
+-- Reconstructed from the 7 DDL screenshots provided.
+-- Captures the structure (tables, columns, primary keys, types) of the
+-- user's data mart so the parser can be exercised against it.
+-- Reconstruction is best-effort — the actual DDL on the office laptop
+-- should always be the source of truth.
+
+-- ========================================================================== --
+-- DIMENSIONS
+-- ========================================================================== --
+
+CREATE TABLE dim_account (
+    id bigint,
+    data_owner_id bigint,
+    code varchar(255) not null,
+    name varchar(255) not null,
+    description varchar(255),
+    account_number varchar(255),
+    currency varchar(3) not null,
+    currency_group_code varchar(255),
+    currency_group_name varchar(255),
+    type_code varchar(255),
+    type_name varchar(255),
+    identifier varchar(255),
+    identifier_type_code varchar(30),
+    identifier_type_name varchar(70),
+    group_code varchar(255),
+    group_name varchar(255),
+    bank_group_code varchar(255),
+    bank_group_name varchar(255),
+    bank_code varchar(255),
+    bank_name varchar(255),
+    bank_type_code varchar(255),
+    bank_type_name varchar(255),
+    bank_identifier varchar(255),
+    bank_identifier_type_code varchar(255),
+    bank_identifier_type_name varchar(255),
+    bank_street varchar(255),
+    bank_street_number varchar(40),
+    bank_postal_code varchar(40),
+    bank_city varchar(70),
+    bank_state varchar(40),
+    bank_country_code varchar(2),
+    bank_country_name varchar(255),
+    bank_country_group_code varchar(255),
+    bank_country_group_name varchar(255),
+    bank_bic varchar(11),
+    bank_clearing_code varchar(255),
+    bank_clearing_system varchar(255),
+    holder_group_code varchar(255),
+    holder_group_name varchar(255),
+    holder_code varchar(255),
+    holder_name varchar(255),
+    holder_type_code varchar(255),
+    holder_type_name varchar(255),
+    holder_identifier varchar(255),
+    holder_identifier_type_code varchar(255),
+    holder_identifier_type_name varchar(255),
+    holder_street varchar(255),
+    holder_street_number varchar(40),
+    holder_postal_code varchar(40),
+    holder_city varchar(70),
+    holder_state varchar(40),
+    holder_country_code varchar(2),
+    holder_country_name varchar(255),
+    holder_country_group_code varchar(255),
+    holder_country_group_name varchar(255),
+    holder_bic varchar(11),
+    opening_date date,
+    closing_date date,
+    custom_text1 varchar(255),
+    custom_text2 varchar(255),
+    custom_text3 varchar(255),
+    custom_text4 varchar(255),
+    custom_text5 varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_dim_account PRIMARY KEY (id)
+);
+
+CREATE TABLE dim_date (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    cal_date date not null,
+    cal_year smallint not null,
+    cal_month varchar(3) not null,
+    cal_day smallint not null,
+    day_of_week varchar(3) not null,
+    day_of_year smallint not null,
+    week_of_year smallint not null,
+    quarter smallint not null,
+    CONSTRAINT pk_dim_date PRIMARY KEY (id)
+);
+
+DO $$ DECLARE
+    cal_date dim_date.cal_date%TYPE;
+BEGIN
+    SELECT TO_DATE('01-01-1980','DD-MM-YYYY') INTO STRICT cal_date;
+END $$;
+
+CREATE TABLE dim_as_characteristics (
+    id bigint,
+    balance_opening_flag char(1) not null,
+    balance_closing_flag char(1) not null,
+    balance_closing_available_flag char(1) not null,
+    transaction_intraday_flag char(1) not null,
+    CONSTRAINT pk_dim_as_characteristics PRIMARY KEY (id)
+);
+
+INSERT INTO dim_as_characteristics VALUES (1,'N','N','N','N');
+
+CREATE TABLE dim_currency (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    code varchar(20) not null,
+    name varchar(150) not null,
+    numeric_code varchar(3) not null,
+    number_of_decimals int,
+    major_unit_name varchar(70),
+    minor_unit_name varchar(70),
+    is_default_currency char(1) not null,
+    last_updated_time timestamp,
+    CONSTRAINT pk_dim_currency PRIMARY KEY (id)
+);
+
+CREATE TABLE dim_data_owner (
+    id bigint,
+    code varchar(255) not null,
+    name varchar(255) not null,
+    country_code varchar(2),
+    country_name varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_dim_data_owner PRIMARY KEY (id)
+);
+
+INSERT INTO dim_data_owner VALUES (1,'NOT SET','NOT SET',' ','NOT SET',current_timestamp);
+
+CREATE TABLE dim_user (
+    id bigint,
+    code varchar(255) not null,
+    name varchar(255) not null,
+    email varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_dim_user PRIMARY KEY (id)
+);
+
+INSERT INTO dim_user VALUES (1,'NOT SET','NOT SET','NOT SET',current_timestamp);
+
+CREATE TABLE dim_classification (
+    id bigint,
+    code varchar(255) not null,
+    name varchar(255) not null,
+    last_updated_time timestamp,
+    CONSTRAINT pk_dim_classification PRIMARY KEY (id)
+);
+
+INSERT INTO dim_classification VALUES (1,'NOT SET','NOT SET',current_timestamp);
+
+CREATE TABLE dim_routing (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    source_system varchar(50) not null,
+    source_channel varchar(50) not null,
+    target_system varchar(50) not null,
+    target_channel varchar(50) not null,
+    CONSTRAINT pk_dim_routing PRIMARY KEY (id)
+);
+
+INSERT INTO dim_routing VALUES (1,'NOT SET','NOT SET','NOT SET','NOT SET');
+
+CREATE TABLE dim_as_transaction_type (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    domain varchar(7),
+    family varchar(7),
+    sub_family varchar(7),
+    proprietary_code varchar(35),
+    proprietary_issuer varchar(35),
+    CONSTRAINT pk_dim_as_transaction_type PRIMARY KEY (id)
+);
+
+INSERT INTO dim_as_transaction_type VALUES (1,'NOT SET','NOT SET','NOT SET','NOT SET','NOT SET');
+
+CREATE TABLE dim_pay_characteristics (
+    id bigint,
+    letter_company_flag char(1),
+    letter_confidential_flag char(1),
+    letter_locked_flag char(1),
+    letter_signed_flag char(1),
+    letter_blocked_flag char(1),
+    letter_first_signed_flag char(1),
+    letter_second_signed_flag char(1),
+    letter_third_signed_flag char(1),
+    letter_fourth_signed_flag char(1),
+    letter_resigner_flag char(1),
+    foreign_letter_flag char(1),
+    letter_send_company_flag char(1),
+    foreign_company_send_flag char(1),
+    foreign_branch_send_flag char(1),
+    letter_status_flag char(1),
+    CONSTRAINT pk_dim_pay_characteristics PRIMARY KEY (id)
+);
+
+CREATE TABLE dim_pay_bank_status (
+    id bigint,
+    accepted_flag char(1) not null,
+    rejected_flag char(1) not null,
+    accepted_flag_clearing char(1) not null,
+    rejected_flag_clearing char(1) not null,
+    CONSTRAINT pk_dim_pay_bank_status PRIMARY KEY (id)
+);
+
+-- ========================================================================== --
+-- FACTS
+-- ========================================================================== --
+
+CREATE TABLE fact_as_balance (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    balance_type_id bigint,
+    account_id bigint,
+    currency_id bigint,
+    balance_date_id bigint,
+    data_owner_id bigint,
+    routing_id bigint,
+    balance_amount numeric(31,16) not null,
+    amount_in_default_currency numeric(31,16),
+    fx_rate_of_default_currency numeric(28,10),
+    fx_rate_date date not null,
+    statement_number bigint not null,
+    sequence_number bigint,
+    account_statement_id bigint,
+    bank_transaction_id bigint,
+    custom_text1 varchar(255),
+    custom_text2 varchar(255),
+    custom_text3 varchar(255),
+    custom_text4 varchar(255),
+    custom_text5 varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_fact_as_balance PRIMARY KEY (id)
+);
+
+CREATE TABLE fact_as_transaction (
+    id bigint,
+    account_id bigint,
+    currency_id bigint,
+    value_date_id bigint,
+    data_owner_id bigint,
+    intraday_id bigint,
+    classification_id bigint,
+    routing_id bigint,
+    transaction_type_id bigint,
+    amount numeric(31,16) not null,
+    amount_in_default_currency numeric(31,16),
+    fx_rate_of_default_currency numeric(28,10),
+    fx_rate_date date not null,
+    creation_date_time timestamp,
+    entry_date date,
+    account_owner_ref varchar(255),
+    account_servicer_ref varchar(255),
+    supplementary_details varchar(500),
+    debit_credit_mark varchar(4000),
+    statement_number bigint not null,
+    sequence_number bigint not null,
+    bank_transaction_id bigint,
+    account_statement_id bigint,
+    custom_text1 varchar(255),
+    custom_text2 varchar(255),
+    custom_text3 varchar(255),
+    custom_text4 varchar(255),
+    custom_text5 varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_fact_as_transaction PRIMARY KEY (id)
+);
+
+CREATE TABLE fact_as_currency_exchange (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    data_owner_id bigint not null,
+    rate_date_id bigint not null,
+    from_currency_id bigint not null,
+    to_currency_id bigint not null,
+    exchange_rate numeric(28,10) not null,
+    last_updated_time timestamp,
+    CONSTRAINT pk_fact_as_currency_exchange PRIMARY KEY (id)
+);
+
+CREATE TABLE fact_pay_payment (
+    id bigint,
+    ordering_account_id bigint,
+    requesting_execution_date bigint,
+    payment_method_id bigint,
+    currency_id bigint,
+    data_owner_id bigint,
+    classification_id bigint,
+    characteristics_id bigint,
+    first_approver_id bigint,
+    second_approver_id bigint,
+    bank_status_id bigint,
+    routing_id bigint,
+    amount numeric(31,16) not null,
+    amount_in_default_currency numeric(31,16),
+    fx_rate_of_default_currency numeric(28,10),
+    counter_account_number varchar(255),
+    counter_bank_name varchar(255),
+    counter_bank_country_code varchar(2),
+    counter_bank_country_name varchar(255),
+    counterparty_country_code varchar(2),
+    counterparty_country_name varchar(255),
+    counterparty_country_group_code varchar(255),
+    counterparty_country_group_name varchar(255),
+    own_reference_id bigint,
+    own_reference_batch_id bigint,
+    own_reference_first_id varchar(255),
+    own_reference_second_id varchar(255),
+    own_reference_third_id varchar(255),
+    amount_format_date timestamp,
+    amount_approval_date timestamp,
+    amount_release_date timestamp,
+    first_approval_date timestamp,
+    second_approval_date timestamp,
+    first_signed_date timestamp,
+    second_signed_date timestamp,
+    creation_date timestamp,
+    creation_user_id bigint,
+    rejection_reason_description varchar(4000),
+    custom_text1 varchar(255),
+    custom_text2 varchar(255),
+    custom_text3 varchar(255),
+    custom_text4 varchar(255),
+    custom_text5 varchar(255),
+    last_updated_time timestamp,
+    CONSTRAINT pk_fact_pay_payment PRIMARY KEY (id)
+);
+
+-- ========================================================================== --
+-- FOREIGN KEY CONSTRAINTS
+-- ========================================================================== --
+
+ALTER TABLE dim_account ADD CONSTRAINT uk_dim_account_01 UNIQUE (code);
+ALTER TABLE dim_currency ADD CONSTRAINT uk_dim_currency_01 UNIQUE (code);
+ALTER TABLE fact_as_balance ADD CONSTRAINT fk_fact_as_balance_01 FOREIGN KEY (account_id) REFERENCES dim_account (id);
+ALTER TABLE fact_as_balance ADD CONSTRAINT fk_fact_as_balance_02 FOREIGN KEY (balance_date_id) REFERENCES dim_date (id);
+ALTER TABLE fact_as_balance ADD CONSTRAINT fk_fact_as_balance_03 FOREIGN KEY (currency_id) REFERENCES dim_currency (id);
+
+CREATE INDEX idx_fact_as_balance_01 ON fact_as_balance (account_id);
+CREATE INDEX idx_fact_as_balance_02 ON fact_as_balance (balance_date_id);
+CREATE INDEX idx_fact_as_balance_03 ON fact_as_balance (currency_id);

@@ -359,6 +359,25 @@ docker compose -f local/docker-compose.yml down
 docker compose -f local/docker-compose.yml down -v
 ```
 
+## Moving from the local stack to your own data mart
+
+The local stack uses a synthetic schema for end-to-end testing. When you
+want strata to ingest your real data mart, three repo-local tools make
+the migration into a guided process:
+
+| Need | Tool | What it does |
+|---|---|---|
+| Translate your DDL into `tables.yaml` | [`local/scripts/ddl_to_yaml.py`](../local/scripts/ddl_to_yaml.py) | Parses CREATE TABLE statements, emits a draft YAML with TODO markers on judgment fields. Supports `--merge` for incremental updates. |
+| Seed your data mart with synthetic data | [`examples/seed_full_datamart.py`](../examples/seed_full_datamart.py) | Populates `dim_account`, `dim_currency`, and the four facts. Skips dims that are populated by INSERTs in your DDL. Idempotent, configurable volumes. |
+| Full workflow guide | [`docs/translating-ddl-to-yaml.md`](translating-ddl-to-yaml.md) | Step-by-step from "I have DDL" to "I have a working tables.yaml in production." Includes the `--merge` incremental flow for when the DDL evolves. |
+
+The DDL→YAML script handles ~50% of the work mechanically (table name,
+PK, candidate watermark, candidate partition). The other half — picking
+the right `domain`, refining `partition_spec` based on row volume,
+choosing `sort_order` — is judgment work that's faster with Copilot's
+`@workspace /add-table` prompt (or Claude's `/add-table` command) once
+you have the draft open. See the linked doc for the full play-by-play.
+
 ## Troubleshooting
 
 The canonical reference for "what just went wrong on my laptop." Every

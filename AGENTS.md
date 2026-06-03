@@ -158,6 +158,7 @@ modules.
 | **Set up local dev environment** | `/setup-local` | `/setup-local` |
 | **Set up AWS environment (dev or customer)** | `/new-customer` or `new-customer-stamp` skill | `/new-customer` |
 | Add a new source table | `/add-table` or `table-author` agent | `/add-table` |
+| Translate a full data-mart DDL into tables.yaml | `python3 local/scripts/ddl_to_yaml.py <ddl.sql>` then `/add-table` per table | same — see [`docs/translating-ddl-to-yaml.md`](docs/translating-ddl-to-yaml.md) |
 | Debug a failed Glue run | `/debug` or `glue-debugger` agent | `/debug` |
 | Review a PR for reliability impact | `/review` or `reliability-reviewer` agent | `/review` |
 | Run or plan a backfill | `/backfill` | `/backfill` |

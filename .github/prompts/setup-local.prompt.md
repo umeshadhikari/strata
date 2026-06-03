@@ -205,6 +205,27 @@ For the deeper picture, point the user at:
 - [`docs/local-runtime.md`](../../docs/local-runtime.md) — the full walkthrough with every detail
 - [`docs/testing-incremental.md`](../../docs/testing-incremental.md) — verifying the watermark + idempotency contract
 
+## Going further — strata against the user's own data mart
+
+If the user wants to point strata at a real data mart (not the
+synthetic local one), three repo tools handle that transition:
+
+- **`python3 local/scripts/ddl_to_yaml.py <ddl.sql> > tables.yaml`** —
+  extracts every CREATE TABLE from a SQL file into a draft
+  `tables.yaml`. Mechanical fields auto-filled; judgment fields
+  (`domain`, `partition_spec` refinement, `sort_order`) marked TODO.
+  Supports `--merge <existing.yaml>` for incremental updates when
+  the DDL evolves. Pure Python, no Docker required.
+- **`python3 examples/seed_full_datamart.py`** — populates
+  `dim_account`, `dim_currency`, and the four facts with synthetic
+  data while skipping dims that are already seeded by INSERTs in the
+  DDL. Idempotent on dims; pass `--reset` to truncate facts.
+- **`docs/translating-ddl-to-yaml.md`** — the full step-by-step
+  guide for the office-laptop scenario where the DDL must stay local.
+
+If the user mentions a data mart, DDL, or seeding tables in a
+production-shape schema, point them at these three.
+
 ## What this workflow does NOT do
 
 - It does not configure a real AWS account. For that, use the
