@@ -57,13 +57,24 @@ echo "[4/6] Verifying the spark container is healthy..."
 docker compose -f local/docker-compose.yml exec -T spark python --version
 
 echo "[5/6] Bootstrapping reference data + 30 days × 500 payments/day..."
-# Mount the local/postgres directory into the spark container for the bootstrap script
-docker run --rm \
-  --network strata-network \
-  -e PGHOST=postgres -e PGUSER=strata -e PGPASSWORD=strata -e PGDATABASE=data_mart \
-  -v "$(pwd)/local/postgres:/work:ro" \
-  python:3.11-slim \
-  sh -c "pip install --quiet psycopg2-binary && python /work/bootstrap.py --reset"
+# Delegated to seed.sh, which runs bootstrap.py inside the spark container
+# (no PyPI / Docker Hub network reach needed) and verifies row counts.
+# If the seed fails, the whole setup fails — silent empty data marts are
+# the worst kind of bug because the dashboard "works" but shows nothing.
+if ! ./local/scripts/seed.sh; then
+  cat >&2 <<'ERR'
+
+  ✗ Bootstrap seeding failed. The stack is up but the data mart is empty,
+    so any ingest job will write zero rows and the dashboards will be blank.
+
+  Re-run the seeder by itself to see the underlying error:
+    ./local/scripts/seed.sh
+
+  Once that succeeds, run:
+    ./local/scripts/run-all.sh --full-refresh
+ERR
+  exit 1
+fi
 
 echo "[6/6] Waiting for Trino and Superset to be healthy..."
 for _ in {1..60}; do
@@ -84,7 +95,10 @@ echo "  → superset ready at http://localhost:8088 (admin/admin)"
 
 echo
 echo "Setup complete. Next:"
-echo "  ./local/scripts/ingest.sh DIM_CURRENCY --full-refresh"
-echo "  ./local/scripts/ingest.sh FACT_PAYMENT --full-refresh"
-echo "  ./local/scripts/trino.sh                  # Trino CLI"
-echo "  open http://localhost:8088                # Superset (admin/admin)"
+echo "  ./local/scripts/run-all.sh --full-refresh    # ingest every table into Iceberg"
+echo "  ./local/scripts/inspect-state.sh             # verify watermark + Iceberg state"
+echo "  ./local/scripts/trino.sh                     # Trino CLI"
+echo "  open http://localhost:8088                   # Superset (admin/admin)"
+echo
+echo "If something looks off later:"
+echo "  ./local/scripts/seed.sh --wipe-state         # re-seed Postgres + clear strata state"

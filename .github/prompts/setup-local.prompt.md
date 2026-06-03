@@ -49,18 +49,34 @@ If anything is unhealthy, run `docker compose -f local/docker-compose.yml logs <
 
 ## Step 2: Seed Postgres with synthetic data
 
+`setup.sh` from Step 1 already ran the seeder as step 5 — but if you
+ever need to re-seed by hand (Postgres got wiped, you want fresh
+random data, the earlier seed silently failed on a prior version of
+the setup script):
+
 ```bash
-docker compose -f local/docker-compose.yml exec -T spark \
-  python /app/local/postgres/bootstrap.py
+./local/scripts/seed.sh
 ```
 
-This populates:
+This stages `bootstrap.py` into the running spark container (no PyPI
+or Docker Hub network needed — the container already has psycopg2),
+runs it with `--reset`, and verifies row counts afterwards. Failure
+exits non-zero with an actionable message. To also wipe the SQLite
+state DB so the next ingest's watermark starts clean (the safer
+choice if you're re-seeding because previous ingests landed on empty
+data):
+
+```bash
+./local/scripts/seed.sh --wipe-state
+```
+
+The seeder populates:
 
 - 6 currencies, 5 data owners, 8 accounts, 6 payment methods
 - 15,000 payments over 30 days, randomly distributed
-- 720 balance records (8 accounts × 30 days × 3 currencies)
+- 720 balance records
 
-Takes ~30 seconds. Confirm with:
+Confirm with:
 
 ```bash
 docker compose -f local/docker-compose.yml exec -T postgres \
@@ -156,6 +172,7 @@ done by hand, or import from the dashboard JSON if exported.
 |---|---|---|
 | Ingest fails: `secret file not found in /app/secrets/db.local.json` (or `setup.sh` complains about a missing `.example`) | An older `.gitignore` excluded the whole `local/secrets/` directory at clone time, so neither the real secret nor the `.example` template made it into the working tree. | Pull latest (the `.gitignore` now keeps `*.example` and `.gitkeep`), then `cp local/secrets/db.local.json.example local/secrets/db.local.json`. Or write the JSON inline — see `setup.sh` for the exact shape (postgres / 5432 / data_mart / strata / strata). |
 | Ingest fails: `ClassCastException: org.postgresql.Driver` or `ClassNotFoundException: org.postgresql.Driver` during full refresh | Spark's JDBC source reader can't find the driver class on its classpath. With `spark.jars.packages` alone the JAR sometimes lands where the Iceberg catalog can see it but the source reader can't. The fix bakes the JAR directly into `$PYSPARK_HOME/jars/` via the Spark Dockerfile. | Pull latest, then **rebuild the image**: `docker compose -f local/docker-compose.yml build spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`. Verify with `docker compose -f local/docker-compose.yml exec spark ls /usr/local/lib/python3.10/dist-packages/pyspark/jars/ \| grep postgresql` — should show `postgresql-42.7.3.jar`. |
+| Ingest succeeds but `rows_written=0` for every table, dashboards empty, Trino sees zero rows | Postgres data mart is empty — bootstrap seeder either never ran or failed silently. Strata is doing exactly what it's supposed to: extracting from an empty source and committing a zero-row snapshot. Watermark advances so subsequent runs would also write zero. | `./local/scripts/seed.sh --wipe-state` (re-seeds Postgres + clears stale state in one go), then `./local/scripts/run-all.sh --full-refresh`. |
 | `setup.sh` fails: `image bitnami/spark:3.5.0 not found` | Bitnami changed their tagging. Our `Dockerfile` builds from `eclipse-temurin:17-jdk-jammy` instead. | Pull latest; the Dockerfile in `local/spark/` should be current |
 | Port 5432 already in use | Local Postgres (Homebrew) | Default config maps to 5433 — no action needed unless you also have something on 5433 |
 | `connector.name=iceberg` error in Trino logs | Wrong properties in `local/trino/etc/catalog/iceberg.properties` | Use the minimal version in the repo; don't add `iceberg.metadata-cache.enabled` or `fs.native-local.enabled` |
@@ -170,8 +187,11 @@ done by hand, or import from the dashboard JSON if exported.
 | Bring stack up | `docker compose -f local/docker-compose.yml up -d` |
 | Bring stack down (keep data) | `docker compose -f local/docker-compose.yml down` |
 | Wipe everything (start clean) | `docker compose -f local/docker-compose.yml down -v && rm -rf local/data/state local/data/warehouse` |
+| Re-seed Postgres | `./local/scripts/seed.sh` |
+| Re-seed + clear strata state in one go | `./local/scripts/seed.sh --wipe-state` |
 | Run ingest for one table | `./local/scripts/ingest.sh FACT_PAYMENT` |
 | Run ingest for all | `./local/scripts/run-all.sh` |
+| Run ingest for all with full refresh | `./local/scripts/run-all.sh --full-refresh` |
 | Inspect strata state | `./local/scripts/inspect-state.sh` |
 | Inject test data + ingest + verify | `./local/scripts/add-incremental-data.sh --inserts 100 && ./local/scripts/run-and-verify.sh --expect-delta 100` |
 | Open Trino CLI | `./local/scripts/trino.sh` |

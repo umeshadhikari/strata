@@ -58,13 +58,20 @@ This script does the following, with progress printed at each step:
    extract step. If you see that error, rebuild the image:
    `docker compose -f local/docker-compose.yml build spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`.
 4. Installs Python dependencies inside the Spark container.
-5. **Runs the bootstrap script** to populate the data mart with:
-   - 6 currencies (USD, EUR, GBP, JPY, CHF, SGD)
-   - 5 data owners
-   - 8 accounts (mix of US and IBAN)
-   - 6 payment methods
-   - 30 days × 500 payments = 15,000 transactions
-   - 30 days × accounts × 3 currencies of balance rows
+5. **Runs the bootstrap seeder via `./local/scripts/seed.sh`** which:
+   - Stages `bootstrap.py` into the running spark container (no
+     PyPI/Docker Hub dependency — corporate-network safe)
+   - Runs it with `--reset` so facts are fresh
+   - Verifies `data_mart.fact_payment` row count afterwards and
+     exits non-zero if the seed silently failed
+   - Populates: 6 currencies, 5 data owners, 8 accounts, 6 payment
+     methods, 15,000 payments over 30 days, 720 balance rows
+
+   If the seed fails, `setup.sh` aborts with an actionable message
+   rather than continuing. **You can re-run the seeder by itself any
+   time** with `./local/scripts/seed.sh` (add `--wipe-state` to also
+   clear the SQLite watermark + Iceberg warehouse so the next ingest
+   starts clean).
 6. Waits for Trino and Superset to be healthy.
 
 Expected wall-clock time on first run: **3–5 minutes** (image pulls). On
@@ -362,7 +369,8 @@ docker compose -f local/docker-compose.yml down -v
 | Superset login fails | Wait longer; first-time init runs migrations. Re-check `docker compose ... logs superset` |
 | First Spark ingest is very slow | Iceberg JARs downloading from Maven Central; subsequent runs are warm |
 | `Permission denied` on warehouse files | Linux only: `sudo chown -R $(id -u):$(id -g) local/data` |
-| Need fresh data without resetting state | `python local/postgres/bootstrap.py --days 7 --payments-per-day 200` (without `--reset`) |
+| Need fresh data without resetting state | `./local/scripts/seed.sh --no-reset --days 7 --payments-per-day 200` |
+| Ingests succeed but `rows_written=0`, dashboards empty | Postgres data mart is empty (seed silently failed on an earlier setup). `./local/scripts/seed.sh --wipe-state` re-seeds and clears stale watermark, then `./local/scripts/run-all.sh --full-refresh` |
 
 ## What you've verified
 
