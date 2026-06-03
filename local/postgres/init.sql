@@ -10,7 +10,14 @@
 
 -- Ensure all tables land in the data_mart schema, which is what
 -- strata's tables.local.yaml expects in `source_schema: data_mart`.
+-- `SET search_path` is session-only, so without the ALTER DATABASE
+-- below, future psycopg2 connections (bootstrap.py, the incremental
+-- seeder, anything else) would fall back to the default search path
+-- and fail to resolve unqualified table names. ALTER DATABASE makes
+-- it the default for every NEW connection — old connections see the
+-- change only after they reconnect.
 CREATE SCHEMA IF NOT EXISTS data_mart;
+ALTER DATABASE data_mart SET search_path TO data_mart, public;
 SET search_path TO data_mart, public;
 
 CREATE TABLE dim_account (

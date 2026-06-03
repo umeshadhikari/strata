@@ -97,7 +97,15 @@ COUNTRIES = [
 # --------------------------------------------------------------------------- #
 
 def connect():
-    """Open a psycopg2 connection. Auto-detects in-container vs host."""
+    """Open a psycopg2 connection. Auto-detects in-container vs host.
+
+    Pins ``search_path`` to ``data_mart, public`` at the protocol level so
+    every query inside this script resolves bare table names like
+    ``fact_pay_payment`` even if the database's default search_path hasn't
+    been set via ``ALTER DATABASE`` (older installs that pre-date the
+    init.sql change). ``options="-c key=value"`` is libpq's standard way
+    to feed startup parameters into a Postgres session.
+    """
     default_host = "postgres" if os.path.exists("/.dockerenv") else "localhost"
     return psycopg2.connect(
         host=os.environ.get("PGHOST", default_host),
@@ -105,6 +113,7 @@ def connect():
         dbname=os.environ.get("PGDATABASE", "data_mart"),
         user=os.environ.get("PGUSER", "strata"),
         password=os.environ.get("PGPASSWORD", "strata"),
+        options="-c search_path=data_mart,public",
     )
 
 

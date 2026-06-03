@@ -97,7 +97,12 @@ COUNTRIES = [
 # --------------------------------------------------------------------------- #
 
 def connect():
-    """Open a psycopg2 connection. Auto-detects in-container vs host."""
+    """Open a psycopg2 connection. Auto-detects in-container vs host.
+
+    Pins ``search_path`` to ``data_mart, public`` at the protocol level so
+    bare table names resolve even on databases where ``ALTER DATABASE
+    ... SET search_path`` was never applied.
+    """
     default_host = "postgres" if os.path.exists("/.dockerenv") else "localhost"
     return psycopg2.connect(
         host=os.environ.get("PGHOST", default_host),
@@ -105,6 +110,7 @@ def connect():
         dbname=os.environ.get("PGDATABASE", "data_mart"),
         user=os.environ.get("PGUSER", "strata"),
         password=os.environ.get("PGPASSWORD", "strata"),
+        options="-c search_path=data_mart,public",
     )
 
 
