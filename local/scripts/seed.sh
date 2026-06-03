@@ -113,12 +113,12 @@ $COMPOSE exec -T spark python /tmp/bootstrap/bootstrap.py $RESET ${EXTRA_ARGS[@]
 echo
 echo "[seed] verifying row counts..."
 COUNTS=$($COMPOSE exec -T postgres psql -U strata -d data_mart -tA \
-  -c "SELECT COUNT(*) FROM data_mart.fact_payment;")
+  -c "SELECT COUNT(*) FROM data_mart.fact_pay_payment;")
 
 if [ -z "$COUNTS" ] || [ "$COUNTS" = "0" ]; then
   cat >&2 <<'ERR'
 
-  ✗ Seeder reported success but data_mart.fact_payment is still empty.
+  ✗ Seeder reported success but data_mart.fact_pay_payment is still empty.
 
   Possible causes:
     - Postgres is healthy but on a different database than expected

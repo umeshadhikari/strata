@@ -36,17 +36,19 @@ You should already have the local stack running per
 > If you paste a command and see an "unrecognized arguments" error, strip
 > any trailing `# ...` from the line.
 
-After `run-all.sh` you have ~15K payments in Postgres, the same 15K in
-Iceberg (via `iceberg.silver_payments.fact_payment`), and a watermark in
-the SQLite state DB pointing to whenever the seeder finished.
+After `run-all.sh` you have ~3K payments, ~6K balances, ~6K transactions,
+and ~2.7K FX rates in Postgres (defaults: 30 days × per-day counts in
+`bootstrap.py`); the same row counts in Iceberg under
+`iceberg.silver_payments.*` and `iceberg.silver_balances.*`; and a per-table
+watermark in the SQLite state DB pointing to whenever the seeder finished.
 
 ## The three helper scripts
 
 | Script | What it does |
 |---|---|
-| `./local/scripts/inspect-state.sh` | Prints state from Postgres + SQLite + Iceberg side by side. Add `--json` for diffable output. |
-| `./local/scripts/add-incremental-data.sh` | Injects test data into Postgres with `last_updated_time = NOW()`. Supports `--inserts N`, `--updates N`, `--mixed N`. |
-| `./local/scripts/run-and-verify.sh` | Inspects state, runs ingest, inspects again, prints the delta. Add `--expect-delta N` to make it a pass/fail check. |
+| `./local/scripts/inspect-state.sh` | Prints state from Postgres + SQLite + Iceberg side by side. Defaults to `FACT_PAY_PAYMENT`; override with `--table`. Add `--json` for diffable output. |
+| `./local/scripts/add-incremental-data.sh` | Injects test data into Postgres with `last_updated_time = NOW()`. Supports `--inserts N`, `--updates N`, `--mixed N` against any of the four facts via `--table` (default `fact_pay_payment`). |
+| `./local/scripts/run-and-verify.sh` | Inspects state, runs ingest, inspects again, prints the delta. Defaults to `FACT_PAY_PAYMENT`; override with `--table`. Add `--expect-delta N` to make it a pass/fail check. |
 
 All three execute inside the `spark` container via `docker compose exec`,
 so they share the same Postgres credentials and SQLite mount that
@@ -55,13 +57,13 @@ so they share the same Postgres credentials and SQLite mount that
 ## Test 1 — Insert-only delta
 
 Goal: prove the watermark window is honored — a second run pulls only the
-new rows, not all 15K again.
+new rows, not all 3K again.
 
 ```bash
 # 1. Baseline
 ./local/scripts/inspect-state.sh
 
-# 2. Inject 100 brand-new payments
+# 2. Inject 100 brand-new payments (default --table fact_pay_payment)
 ./local/scripts/add-incremental-data.sh --inserts 100 --label test1
 
 # 3. Run ingest and check delta
@@ -75,7 +77,7 @@ Expected output from step 3:
   Postgres rows delta : +100
   Iceberg  rows delta : +100
   Watermark           : 2026-06-02T21:13:42.000Z → 2026-06-03T05:40:11.000Z
-  New run_id          : local::FACT_PAYMENT::20260603T054011Z
+  New run_id          : local::FACT_PAY_PAYMENT::20260603T054011Z
   New snapshot_id     : 8472...
   Snapshot row_count  : 100
   last_run_status     : COMPLETED
@@ -86,12 +88,34 @@ Expected output from step 3:
 What it tells you:
 
 - The Iceberg delta matches the Postgres delta (no duplicates, no drops)
-- `Snapshot row_count: 100` confirms only 100 rows traveled — not 15,100
+- `Snapshot row_count: 100` confirms only 100 rows traveled — not 3,100
 - `Watermark` advanced past the previous high-water mark
 - A new run_id was assigned
 
-If you see `Snapshot row_count: 15100`, the watermark was ignored — that's
+If you see `Snapshot row_count: 3100`, the watermark was ignored — that's
 a bug in extract or in how `compute_window()` reads `current_watermark`.
+
+### The same test against the other facts
+
+All four fact tables share `last_updated_time` as their watermark, so the
+same three commands work for balances, transactions, and FX rates — just
+point `inspect-state.sh`, `add-incremental-data.sh`, and `run-and-verify.sh`
+at the right `--table`:
+
+```bash
+# fact_as_balance
+./local/scripts/inspect-state.sh --table FACT_AS_BALANCE
+./local/scripts/add-incremental-data.sh --table fact_as_balance --inserts 100
+./local/scripts/run-and-verify.sh --table FACT_AS_BALANCE --expect-delta 100
+
+# fact_as_transaction
+./local/scripts/add-incremental-data.sh --table fact_as_transaction --inserts 100
+./local/scripts/run-and-verify.sh --table FACT_AS_TRANSACTION --expect-delta 100
+
+# fact_as_currency_exchange
+./local/scripts/add-incremental-data.sh --table fact_as_currency_exchange --inserts 90
+./local/scripts/run-and-verify.sh --table FACT_AS_CURRENCY_EXCHANGE --expect-delta 90
+```
 
 ## Test 2 — Updates re-flow
 
@@ -102,7 +126,7 @@ up on the next run.
 # 1. Baseline
 ./local/scripts/inspect-state.sh
 
-# 2. Flip 50 PENDING payments to APPROVED (and bump last_updated_time)
+# 2. Flip 50 payments' bank_status_id and bump last_updated_time
 ./local/scripts/add-incremental-data.sh --updates 50 --label test2
 
 # 3. Run ingest
@@ -112,17 +136,27 @@ up on the next run.
 Expected: Iceberg row count increases by 50. **This is intentional** —
 strata's silver layer is append-only. The original row stays, and an
 updated copy lands with a later `_ingest_timestamp`. Downstream queries
-against silver should always be deduped by `payment_id` with a row-number
-window function:
+against silver should always be deduped by `id` with a row-number window
+function:
 
 ```sql
 SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (
-      PARTITION BY payment_id ORDER BY _ingest_timestamp DESC
+      PARTITION BY id ORDER BY _ingest_timestamp DESC
     ) AS rn
-    FROM iceberg.silver_payments.fact_payment
+    FROM iceberg.silver_payments.fact_pay_payment
 ) WHERE rn = 1
 ```
+
+The update flavour varies per table — see the per-fact "what changes" notes
+in [`local/scripts/add_incremental_data.py`](../local/scripts/add_incremental_data.py):
+
+| Table | What `--updates N` touches |
+|---|---|
+| `fact_pay_payment` | flips `bank_status_id`, bumps `last_updated_time` |
+| `fact_as_balance` | nudges `balance_amount` +0.1%, bumps `last_updated_time` |
+| `fact_as_transaction` | flips `debit_credit_mark` (DBIT↔CRDT), bumps `last_updated_time` |
+| `fact_as_currency_exchange` | nudges `exchange_rate` by ±1%, bumps `last_updated_time` |
 
 If you want a deduped gold view, that lives in a separate gold-layer build,
 not in strata.
@@ -165,11 +199,11 @@ Then:
 ./local/scripts/add-incremental-data.sh --inserts 100 --label test3
 RUN_ID="test3-$(date +%s)"
 docker compose -f local/docker-compose.yml exec -T spark \
-    python -m strata.local_ingest --table FACT_PAYMENT --run-id "$RUN_ID"
+    python -m strata.local_ingest --table FACT_PAY_PAYMENT --run-id "$RUN_ID"
 # Expect: 100 rows written
 
 docker compose -f local/docker-compose.yml exec -T spark \
-    python -m strata.local_ingest --table FACT_PAYMENT --run-id "$RUN_ID"
+    python -m strata.local_ingest --table FACT_PAY_PAYMENT --run-id "$RUN_ID"
 # Expect: "idempotent skip" path. rows_written=0, watermark still advances.
 ```
 
@@ -208,7 +242,7 @@ To exercise Case B (stale state, no snapshot):
 ```bash
 # 1. Inject data and start ingest, kill mid-run
 ./local/scripts/add-incremental-data.sh --inserts 200 --label test4b
-./local/scripts/ingest.sh FACT_PAYMENT &
+./local/scripts/ingest.sh FACT_PAY_PAYMENT &
 INGEST_PID=$!
 sleep 5
 kill -9 $INGEST_PID 2>/dev/null
@@ -247,19 +281,19 @@ for i in 1 2 3 4 5; do
 done
 ```
 
-Then refresh the **Payments Analytics** dashboard at
-http://localhost:8088/superset/dashboard/2/. Total payment volume should
-have grown by ~1000 rows × avg amount; the Country Map and Sankeys
-should still render cleanly; the Top Approvers table will have new
-counts.
+Then refresh the **Payments Operations** dashboard at
+http://localhost:8088/superset/dashboard/1/. Total payment volume should
+have grown by ~1000 rows × avg amount; the Country Map and Sankey should
+still render cleanly; the daily payment volume bars will have new
+buckets.
 
 ## Troubleshooting
 
 **`inspect-state.sh` shows "no row" in SQLite state but Iceberg has data.**
 That means a previous run crashed before the state write — Iceberg is
 ahead of the state DB. The next ingest's `reconcile_state()` will fix it.
-Or run `python -m strata.recovery --table FACT_PAYMENT` (if exposed) to
-force reconciliation.
+Or run `python -m strata.recovery --table FACT_PAY_PAYMENT` (if exposed)
+to force reconciliation.
 
 **`run-and-verify.sh` shows `Iceberg rows delta: +0` after inserting data.**
 Three likely causes, in order of probability:
@@ -270,8 +304,8 @@ Three likely causes, in order of probability:
    `inspect-state.sh` will show this. Wait for `STRATA_LOCK_TTL_SECONDS`
    (default 2 hours) or manually clear via SQL.
 3. The watermark column on the source table doesn't have a value for the
-   new rows. Confirm `data_mart.fact_payment.last_updated_time` is NOT NULL
-   on every row.
+   new rows. Confirm `data_mart.fact_pay_payment.last_updated_time` is NOT
+   NULL on every row.
 
 **`run-and-verify.sh` shows a much larger delta than expected.**
 Almost always: the state DB was wiped, so strata is doing a full extract
@@ -293,9 +327,10 @@ rm -rf local/data/state local/data/warehouse
 - **Concurrent runs from two workers.** The lock model is correct (see
   `state.py::acquire`) but exercising it requires two processes racing —
   out of scope here. Add a `--simulate-concurrent` flag if you need it.
-- **Schema drift.** Use `--table` against a dimension and `ALTER` the
-  source schema between runs. The `SchemaDriftError` path is unit-tested
-  in `tests/unit/test_writer.py`.
+- **Schema drift.** Use `--table` against a dimension (e.g.
+  `FACT_PAY_PAYMENT` or `DIM_ACCOUNT`) and `ALTER` the source schema
+  between runs. The `SchemaDriftError` path is unit-tested in
+  `tests/unit/test_writer.py`.
 - **Recovery Case E (lock expiry).** Set `STRATA_LOCK_TTL_SECONDS=5`,
   kill an ingest mid-run, wait 6 seconds, re-run. The lock should be
   considered expired and reacquirable.

@@ -103,8 +103,8 @@ def connect():
         host=os.environ.get("PGHOST", default_host),
         port=os.environ.get("PGPORT", "5432"),
         dbname=os.environ.get("PGDATABASE", "data_mart"),
-        user=os.environ.get("PGUSER", "postgres"),
-        password=os.environ.get("PGPASSWORD", "postgres"),
+        user=os.environ.get("PGUSER", "strata"),
+        password=os.environ.get("PGPASSWORD", "strata"),
     )
 
 
@@ -530,16 +530,38 @@ def truncate_facts(cur) -> None:
 
 
 def print_summary(cur) -> None:
-    """Print row count + max watermark per seeded table."""
+    """Print row count + max watermark for every table — both ones we seed
+    and ones populated by the DDL's INSERTs/DO blocks. Gives the operator
+    a complete view of what's in the data mart after setup."""
     print()
     print("Database summary:")
-    for tbl in ("dim_account", "dim_currency",
-                "fact_as_balance", "fact_as_transaction",
-                "fact_as_currency_exchange", "fact_pay_payment"):
+    all_tables = [
+        # Dims populated by the DDL (INSERTs or DO block)
+        "dim_date", "dim_data_owner", "dim_user", "dim_classification",
+        "dim_routing", "dim_as_transaction_type", "dim_as_characteristics",
+        "dim_pay_bank_status", "dim_pay_characteristics",
+        # Dims populated by this seeder
+        "dim_currency", "dim_account",
+        # Facts populated by this seeder
+        "fact_as_currency_exchange", "fact_as_balance",
+        "fact_as_transaction", "fact_pay_payment",
+    ]
+    for tbl in all_tables:
         try:
-            cur.execute(f"SELECT COUNT(*), MAX(last_updated_time) FROM {tbl}")
+            # Some dims (dim_date, dim_pay_*, dim_as_characteristics) have no
+            # last_updated_time column — fall back to a plain count.
+            cur.execute(f"""
+                SELECT COUNT(*),
+                       CASE WHEN EXISTS (
+                         SELECT 1 FROM information_schema.columns
+                         WHERE table_name = '{tbl}' AND column_name = 'last_updated_time'
+                       ) THEN (SELECT MAX(last_updated_time)::text FROM {tbl})
+                       ELSE NULL END
+                FROM {tbl}
+            """)
             n, wm = cur.fetchone()
-            print(f"  {tbl:32s} rows={n:>10,}  max(last_updated_time)={wm}")
+            wm_str = f"max(last_updated_time)={wm}" if wm else "(no watermark column)"
+            print(f"  {tbl:32s} rows={n:>10,}  {wm_str}")
         except psycopg2.Error as exc:
             print(f"  {tbl:32s} ERROR: {exc}")
 

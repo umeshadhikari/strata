@@ -14,7 +14,7 @@ Run inside the spark container so it shares pyspark + the SQLite mount.
 Usage::
 
     python local/scripts/run_and_verify.py
-    python local/scripts/run_and_verify.py --table FACT_PAYMENT
+    python local/scripts/run_and_verify.py --table FACT_PAY_PAYMENT
     python local/scripts/run_and_verify.py --full-refresh
     python local/scripts/run_and_verify.py --expect-delta 100
 """
@@ -122,7 +122,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI args. `--expect-delta` is the assertion knob — set it
     in CI or scripted tests to fail-fast on a wrong row count."""
     p = argparse.ArgumentParser(description="run strata ingest and diff state")
-    p.add_argument("--table", default="FACT_PAYMENT")
+    p.add_argument("--table", default="FACT_PAY_PAYMENT")
     p.add_argument("--full-refresh", action="store_true",
                    help="Pass --full-refresh through to local_ingest")
     p.add_argument("--expect-delta", type=int, default=None,

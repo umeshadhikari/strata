@@ -7,7 +7,7 @@ DuckDB has native Iceberg support (Hadoop-catalog tables work via
 
 Usage::
 
-    python local/queries/explore.py "SELECT count(*) FROM fact_payment"
+    python local/queries/explore.py "SELECT count(*) FROM fact_pay_payment"
     python local/queries/explore.py --shell
 """
 
@@ -34,7 +34,7 @@ def find_iceberg_tables(warehouse: Path) -> dict[str, Path]:
             if not table_dir.is_dir():
                 continue
             if (table_dir / "metadata").exists():
-                # Use simple table name; "fact_payment" rather than "silver_payments.fact_payment"
+                # Use simple table name; "fact_pay_payment" rather than "silver_payments.fact_pay_payment"
                 tables[table_dir.name] = table_dir
     return tables
 

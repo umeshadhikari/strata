@@ -15,7 +15,7 @@ Usage::
 
     python local/scripts/inspect_state.py                # human-readable
     python local/scripts/inspect_state.py --json         # machine-readable
-    python local/scripts/inspect_state.py --table FACT_PAYMENT
+    python local/scripts/inspect_state.py --table FACT_PAY_PAYMENT
     python local/scripts/inspect_state.py --snapshots 10 # show last 10 snapshots
 """
 
@@ -249,13 +249,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     using a static domain→database map that mirrors the YAML config's
     `glue_database_prefix` + domain scheme."""
     p = argparse.ArgumentParser(description="strata state inspector")
-    p.add_argument("--table", default="FACT_PAYMENT",
-                   help="Logical table name (default: FACT_PAYMENT)")
+    p.add_argument("--table", default="FACT_PAY_PAYMENT",
+                   help="Logical table name (default: FACT_PAY_PAYMENT)")
     p.add_argument("--source-table", default=None,
                    help="Postgres source table name (default: lowercase of --table)")
     p.add_argument("--table-fqn", default=None,
                    help="Fully-qualified Iceberg table name "
-                        "(default: iceberg.silver_payments.fact_payment)")
+                        "(default: iceberg.silver_payments.fact_pay_payment)")
     p.add_argument("--state-db", default="/data/state/strata.db",
                    help="Path to the SQLite state DB inside the spark container")
     p.add_argument("--snapshots", type=int, default=5,
@@ -266,14 +266,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.source_table is None:
         args.source_table = args.table.lower()
     if args.table_fqn is None:
-        # Domain-to-database mapping mirrors the YAML's glue_database_prefix + domain.
+        # Domain-to-database mapping mirrors the YAML's glue_database_prefix
+        # + domain. Covers all 15 tables in the production-shape schema; new
+        # tables added to tables.local.yaml should also get a row here.
         domain_map = {
-            "FACT_PAYMENT": "silver_payments.fact_payment",
-            "FACT_BALANCE": "silver_balances.fact_balance",
-            "DIM_PAYMENT_METHOD": "silver_payments.dim_payment_method",
-            "DIM_CURRENCY": "silver_shared.dim_currency",
-            "DIM_ACCOUNT": "silver_shared.dim_account",
-            "DIM_DATA_OWNER": "silver_shared.dim_data_owner",
+            # payments
+            "FACT_PAY_PAYMENT":          "silver_payments.fact_pay_payment",
+            "DIM_PAY_CHARACTERISTICS":   "silver_payments.dim_pay_characteristics",
+            "DIM_PAY_BANK_STATUS":       "silver_payments.dim_pay_bank_status",
+            # balances / account-statement
+            "FACT_AS_BALANCE":           "silver_balances.fact_as_balance",
+            "FACT_AS_TRANSACTION":       "silver_balances.fact_as_transaction",
+            "FACT_AS_CURRENCY_EXCHANGE": "silver_balances.fact_as_currency_exchange",
+            "DIM_AS_CHARACTERISTICS":    "silver_balances.dim_as_characteristics",
+            "DIM_AS_TRANSACTION_TYPE":   "silver_balances.dim_as_transaction_type",
+            # shared conformed dims
+            "DIM_ACCOUNT":               "silver_shared.dim_account",
+            "DIM_CURRENCY":              "silver_shared.dim_currency",
+            "DIM_DATE":                  "silver_shared.dim_date",
+            "DIM_DATA_OWNER":            "silver_shared.dim_data_owner",
+            "DIM_USER":                  "silver_shared.dim_user",
+            "DIM_CLASSIFICATION":        "silver_shared.dim_classification",
+            "DIM_ROUTING":               "silver_shared.dim_routing",
         }
         args.table_fqn = f"iceberg.{domain_map.get(args.table, 'silver_payments.' + args.source_table)}"
     return args

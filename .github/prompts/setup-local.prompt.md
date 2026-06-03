@@ -70,21 +70,27 @@ data):
 ./local/scripts/seed.sh --wipe-state
 ```
 
-The seeder populates:
+The seeder populates the **production-shape 15-table data mart**:
 
-- 6 currencies, 5 data owners, 8 accounts, 6 payment methods
-- 15,000 payments over 30 days, randomly distributed
-- 720 balance records
+- 9 dimensions seeded by the DDL itself (`dim_date`, `dim_data_owner`,
+  `dim_user`, `dim_classification`, `dim_routing`,
+  `dim_as_transaction_type`, `dim_as_characteristics`,
+  `dim_pay_characteristics`, `dim_pay_bank_status`)
+- 2 dimensions seeded by `bootstrap.py` (`dim_currency` — 10 ISO
+  currencies; `dim_account` — 100 accounts)
+- 4 fact tables — 30 days × per-day counts
+  (`fact_as_balance`, `fact_as_transaction`,
+  `fact_as_currency_exchange`, `fact_pay_payment`)
 
 Confirm with:
 
 ```bash
 docker compose -f local/docker-compose.yml exec -T postgres \
   psql -U strata -d data_mart -c \
-  "SELECT COUNT(*) AS payments FROM data_mart.fact_payment;"
+  "SELECT COUNT(*) AS payments FROM data_mart.fact_pay_payment;"
 ```
 
-Expected: `15000`.
+Expected: `3000` (defaults: 30 days × 100 payments/day).
 
 ## Step 3: Run the first ingest
 
@@ -113,17 +119,27 @@ In the Trino shell:
 SHOW SCHEMAS FROM iceberg;
 -- silver_balances, silver_payments, silver_shared, information_schema
 
-SELECT COUNT(*) FROM iceberg.silver_payments.fact_payment;
--- 15000
+SELECT COUNT(*) FROM iceberg.silver_payments.fact_pay_payment;
+-- 3000
 
-SELECT counterparty_country, SUM(amount) AS volume
-FROM iceberg.silver_payments.fact_payment
-GROUP BY counterparty_country
+SELECT counterparty_country_code, SUM(amount) AS volume
+FROM iceberg.silver_payments.fact_pay_payment
+GROUP BY counterparty_country_code
 ORDER BY volume DESC;
 ```
 
-If you see 12 country rows with volumes in the $25M-$35M range, the
-pipeline is healthy.
+If you see ~15 country rows with volumes spread across alpha-2 codes
+(US, GB, DE, FR, CH, JP, SG, HK, AU, CA, BR, MX, IN, AE, ZA), the
+payments pipeline is healthy. For the balances domain:
+
+```sql
+SELECT SUM(amount_in_default_currency) AS total_balance_usd
+FROM iceberg.silver_balances.fact_as_balance;
+-- Expect ~tens of billions on default 30-day seed.
+
+SELECT COUNT(*) FROM iceberg.silver_balances.fact_as_currency_exchange;
+-- 2700 (30 days × 10×9 pairs).
+```
 
 ## Step 5: Open Superset
 
@@ -174,7 +190,7 @@ done by hand, or import from the dashboard JSON if exported.
 | Ingest fails: `Config error: Invalid YAML in /app/config/tables.local.yaml: expected '<document start>', but found '<block mapping start>'` at line 5 col 1 | Hidden UTF-8 BOM at top of `tables.local.yaml`. PyYAML 6.x treats it as content and fails parsing. The file in the repo is clean; the BOM gets added when an editor (VS Code with "UTF-8 with BOM" encoding, Windows Notepad, etc.) saves over it. | Confirm with `head -1 local/config/tables.local.yaml \| hexdump -C \| head -1` — first three bytes `ef bb bf` means it's a BOM. Reset from repo: `git checkout HEAD -- local/config/tables.local.yaml`. Or strip in place: `sed -i.bak '1s/^\xEF\xBB\xBF//' local/config/tables.local.yaml`. Prevent recurrence by setting your editor encoding to plain "UTF-8" (no BOM). |
 | Ingest fails: `ClassCastException: org.postgresql.Driver` or `ClassNotFoundException: org.postgresql.Driver` during the extract step (after Iceberg catalog already connected fine) | Spark's `spark.read.format("jdbc")` source reader can't find the driver class. `spark.jars.packages` lands the JAR where the Iceberg catalog finds it but not always where Spark's reflection-based driver lookup finds it. | Repo's Spark Dockerfile bakes the JAR into `$PYSPARK_HOME/jars/`. Pull latest, then rebuild: `docker compose -f local/docker-compose.yml build --no-cache spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`. Verify: `docker compose -f local/docker-compose.yml exec spark ls /usr/local/lib/python3.10/dist-packages/pyspark/jars/ \| grep postgresql` should print `postgresql-42.7.3.jar`. |
 | Ingest fails: `org.apache.iceberg.exceptions.NotFoundException: Failed to open input stream for file: file:/data/warehouse/silver_*/metadata/...metadata.json` | Stale Iceberg JDBC catalog. The catalog (Postgres tables `public.iceberg_tables` and `public.iceberg_namespace_properties`) points at metadata files that were wiped from the warehouse. Catalog + warehouse must stay in lockstep — they are two separate storage tiers. | Drop the orphan catalog rows: `docker compose -f local/docker-compose.yml exec -T postgres psql -U strata -d data_mart -c "DROP TABLE IF EXISTS public.iceberg_tables; DROP TABLE IF EXISTS public.iceberg_namespace_properties;"`. Then re-run: `./local/scripts/run-all.sh --full-refresh`. Going forward, `./local/scripts/seed.sh --wipe-state` cleans all three tiers atomically (SQLite + warehouse + catalog). |
-| Ingests succeed but `rows_written=0` for every table; dashboards empty; Trino sees the schemas but zero rows | Postgres data mart is empty — bootstrap seeder never ran or failed silently. Strata is doing exactly what it's supposed to: extracting from an empty source and committing a zero-row snapshot. Watermark advances, so subsequent runs would also write zero. | `./local/scripts/seed.sh --wipe-state` (re-seeds Postgres + clears stale watermark + drops orphan catalog), then `./local/scripts/run-all.sh --full-refresh`. Should see `rows_written=15000` for `FACT_PAYMENT`. |
+| Ingests succeed but `rows_written=0` for every table; dashboards empty; Trino sees the schemas but zero rows | Postgres data mart is empty — bootstrap seeder never ran or failed silently. Strata is doing exactly what it's supposed to: extracting from an empty source and committing a zero-row snapshot. Watermark advances, so subsequent runs would also write zero. | `./local/scripts/seed.sh --wipe-state` (re-seeds Postgres + clears stale watermark + drops orphan catalog), then `./local/scripts/run-all.sh --full-refresh`. Should see `rows_written=3000` for `FACT_PAY_PAYMENT` (and ~9000 / 6000 / 2700 for `FACT_AS_BALANCE` / `FACT_AS_TRANSACTION` / `FACT_AS_CURRENCY_EXCHANGE`). |
 | `./local/scripts/seed.sh` errors with `EXTRA_ARGS[@]: unbound variable` at line 89 | Bash strict mode (`set -u`) doesn't tolerate `"${EMPTY_ARRAY[@]}"` expansion. Fixed in the repo. | Pull latest. |
 | `setup.sh` fails: `image bitnami/spark:3.5.0 not found` | Bitnami changed their tagging. Our `Dockerfile` builds from `eclipse-temurin:17-jdk-jammy` instead. | Pull latest; the Dockerfile in `local/spark/` should be current |
 | Port 5432 already in use | Local Postgres (Homebrew) | Default config maps to 5433 — no action needed unless you also have something on 5433 |
@@ -192,12 +208,32 @@ done by hand, or import from the dashboard JSON if exported.
 | Wipe everything (start clean) | `docker compose -f local/docker-compose.yml down -v && rm -rf local/data/state local/data/warehouse` |
 | Re-seed Postgres | `./local/scripts/seed.sh` |
 | Re-seed + clear strata state in one go | `./local/scripts/seed.sh --wipe-state` |
-| Run ingest for one table | `./local/scripts/ingest.sh FACT_PAYMENT` |
-| Run ingest for all | `./local/scripts/run-all.sh` |
+| Run ingest for one table | `./local/scripts/ingest.sh FACT_PAY_PAYMENT` |
+| Run ingest for all 15 tables | `./local/scripts/run-all.sh` |
 | Run ingest for all with full refresh | `./local/scripts/run-all.sh --full-refresh` |
 | Inspect strata state | `./local/scripts/inspect-state.sh` |
-| Inject test data + ingest + verify | `./local/scripts/add-incremental-data.sh --inserts 100 && ./local/scripts/run-and-verify.sh --expect-delta 100` |
+| Inject test data into payments + ingest + verify | `./local/scripts/add-incremental-data.sh --inserts 100 && ./local/scripts/run-and-verify.sh --expect-delta 100` |
+| Same against the balances fact | `./local/scripts/add-incremental-data.sh --table fact_as_balance --inserts 100 && ./local/scripts/run-and-verify.sh --table FACT_AS_BALANCE --expect-delta 100` |
 | Open Trino CLI | `./local/scripts/trino.sh` |
+
+## Resetting between iterations
+
+Five flavours of reset, ordered lightest → heaviest. The detailed
+reference with copy-paste commands lives in
+[`docs/local-runtime.md` §Step 7](../../docs/local-runtime.md#step-7--reset-between-iterations)
+and [`local/README.md` §Reset](../../local/README.md#reset). The five
+modes in one sentence each:
+
+| # | When to use | One-liner |
+|---|---|---|
+| 1 | More rows, same schema | `./local/scripts/seed.sh --no-reset --days 7 --payments-per-day 200 && ./local/scripts/run-all.sh` |
+| 2 | State + warehouse drifted from Postgres | `./local/scripts/seed.sh --wipe-state && ./local/scripts/run-all.sh --full-refresh` |
+| 3 | Source DDL changed (e.g. picking up new tables.local.yaml + init.sql) | `docker compose -f local/docker-compose.yml down -v && rm -rf local/data/state local/data/warehouse && ./local/scripts/setup.sh && ./local/scripts/run-all.sh --full-refresh` |
+| 4 | Factory reset everything | `docker compose -f local/docker-compose.yml down -v && rm -rf local/data/ && ./local/scripts/setup.sh` |
+| 5 | Spark Dockerfile changed (JAR bump, etc.) | `docker compose -f local/docker-compose.yml down -v && docker compose -f local/docker-compose.yml build --no-cache spark && rm -rf local/data/ && ./local/scripts/setup.sh` |
+
+If the user is asking "I have the old 6-table schema running, how do I
+reset to the 15-table production-shape schema?" — that's option 3.
 
 For the deeper picture, point the user at:
 
