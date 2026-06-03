@@ -21,8 +21,36 @@ echo "  → postgres ready"
 
 echo "[3/6] Copying example secrets if needed..."
 if [ ! -f local/secrets/db.local.json ]; then
+  if [ ! -f local/secrets/db.local.json.example ]; then
+    cat >&2 <<'ERR'
+
+  ✗ Missing local/secrets/db.local.json.example.
+
+  This usually means an old .gitignore excluded the whole secrets/
+  directory at clone time. Either pull latest (the .gitignore has been
+  fixed to keep .example files), or create the file yourself:
+
+    mkdir -p local/secrets
+    cat > local/secrets/db.local.json <<'EOF'
+    {
+      "engine": "postgresql",
+      "host": "postgres",
+      "port": "5432",
+      "database": "data_mart",
+      "username": "strata",
+      "password": "strata",
+      "driver": "org.postgresql.Driver"
+    }
+    EOF
+
+  Then re-run this script.
+ERR
+    exit 1
+  fi
   cp local/secrets/db.local.json.example local/secrets/db.local.json
   echo "  → wrote local/secrets/db.local.json"
+else
+  echo "  → local/secrets/db.local.json already exists, leaving alone"
 fi
 
 echo "[4/6] Verifying the spark container is healthy..."

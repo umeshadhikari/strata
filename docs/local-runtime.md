@@ -41,7 +41,22 @@ This script does the following, with progress printed at each step:
    - `strata-superset` — dashboard tool
 2. Waits for Postgres to be healthy.
 3. Copies `local/secrets/db.local.json.example` to `local/secrets/db.local.json`
-   if it doesn't exist.
+   if it doesn't exist. **Note**: if you cloned the repo with an older
+   `.gitignore` that excluded the whole `local/secrets/` directory, the
+   `.example` file may be missing too. In that case `setup.sh` will fail
+   loudly and tell you how to write the JSON by hand. The current
+   `.gitignore` keeps `*.example` and `.gitkeep` inside `secrets/`.
+
+   The PostgreSQL JDBC driver JAR (`postgresql-42.7.3.jar`) is **baked
+   into the Spark Docker image** via `local/spark/Dockerfile`. It's
+   downloaded once during `docker compose build` and placed in
+   `$PYSPARK_HOME/jars/`. We do not rely on Spark's `spark.jars.packages`
+   Ivy mechanism for the driver because on a fresh laptop that
+   sometimes lands the JAR where the Iceberg catalog finds it but the
+   `spark.read.format("jdbc")` source reader doesn't — manifesting as a
+   confusing `ClassCastException: org.postgresql.Driver` during the
+   extract step. If you see that error, rebuild the image:
+   `docker compose -f local/docker-compose.yml build spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`.
 4. Installs Python dependencies inside the Spark container.
 5. **Runs the bootstrap script** to populate the data mart with:
    - 6 currencies (USD, EUR, GBP, JPY, CHF, SGD)

@@ -78,9 +78,13 @@ override.tf.json
 *.zip
 common.zip
 
-# Secrets — never commit
+# Secrets — never commit the real thing, but keep templates so
+# a fresh clone can bootstrap.
 *.secret
-secrets/
+secrets/*
+!secrets/*.example
+!secrets/*.template
+!secrets/.gitkeep
 .env
 .env.local
 .env.*.local
