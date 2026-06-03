@@ -85,8 +85,13 @@ $COMPOSE exec -T spark mkdir -p /tmp/bootstrap
 $COMPOSE cp local/postgres/bootstrap.py spark:/tmp/bootstrap/bootstrap.py >/dev/null
 
 # --- Run the seeder --- #
+# Note on the awkward array expansion: bash's `set -u` (we use it via
+# `set -euo pipefail`) treats an empty array's `"${ARR[@]}"` as "unbound
+# variable" and errors out. The `${ARR[@]+...}` form expands to the array
+# only when it has at least one element, otherwise to nothing — safe under
+# strict mode.
 echo "[seed] running bootstrap..."
-$COMPOSE exec -T spark python /tmp/bootstrap/bootstrap.py $RESET "${EXTRA_ARGS[@]}"
+$COMPOSE exec -T spark python /tmp/bootstrap/bootstrap.py $RESET ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 
 # --- Verify --- #
 # bootstrap.py prints its own row counts on success, but we double-check
