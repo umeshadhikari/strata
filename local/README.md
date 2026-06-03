@@ -298,14 +298,20 @@ ingests are warm-start fast.
 
 ## Troubleshooting
 
+The full table of known failure modes (with mechanical causes and exact
+fix commands) lives in **[`docs/local-runtime.md` → Troubleshooting](../docs/local-runtime.md#troubleshooting)**.
+It's grouped by layer (stack-level, configuration, Spark/JDBC, Iceberg
+catalog, day-to-day ops) and covers every failure that's ever bitten
+someone on a fresh laptop. Always check there first.
+
+A few highlights for the most common gotchas — see the canonical
+reference for the full list:
+
 **"connect: connection refused" when ingest tries to reach postgres** —
-The spark container can reach postgres only via the `strata-network` Docker
+The spark container reaches postgres via the `strata-network` Docker
 network. Make sure all services are up: `docker compose -f local/docker-compose.yml ps`.
 
-**Trino shows no tables** — Refresh Trino's catalog: in the Trino CLI run
-`SHOW TABLES FROM iceberg.silver_payments`. If still empty, check the
-`iceberg.metadata-cache.enabled=false` line in
-`local/trino/etc/catalog/iceberg.properties`. Restart Trino:
+**Trino shows no tables** — Trino caches catalog state. Restart it:
 `docker compose -f local/docker-compose.yml restart trino`.
 
 **Superset can't connect to Trino** — The connection URI uses the Docker
@@ -313,9 +319,28 @@ service name: `trino://admin@trino:8080/iceberg`. Make sure both containers
 share `strata-network` (they do by default).
 
 **"Permission denied" on warehouse files** — On Linux hosts, the bind mount
-inherits root ownership from the container. Run as root inside containers
-(already configured), or `chown -R $USER:$USER local/data` if you need to
-inspect from the host.
+inherits root ownership from the container. `sudo chown -R $(id -u):$(id -g) local/data`.
+
+**Ingest "succeeds" but every table reports `rows_written=0`, dashboards empty** —
+Postgres data mart is empty (bootstrap seeder silently failed). Fix:
+`./local/scripts/seed.sh --wipe-state && ./local/scripts/run-all.sh --full-refresh`.
+
+**`ClassCastException: org.postgresql.Driver` during the extract step** —
+JDBC driver isn't on Spark's reflection classpath. The repo's Dockerfile
+bakes the JAR into `$PYSPARK_HOME/jars/`; rebuild the spark image:
+`docker compose -f local/docker-compose.yml build --no-cache spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`.
+
+**`FileNotFoundException` for a `metadata.json` under `silver_*/`** —
+The Iceberg JDBC catalog (stored in Postgres) points at metadata files
+that have been wiped from the warehouse. Drop the orphan catalog rows:
+`docker compose -f local/docker-compose.yml exec -T postgres psql -U strata -d data_mart -c "DROP TABLE IF EXISTS public.iceberg_tables; DROP TABLE IF EXISTS public.iceberg_namespace_properties;"`,
+then re-run the full refresh. Going forward, use
+`./local/scripts/seed.sh --wipe-state` which clears all three storage
+tiers atomically.
+
+**`Invalid YAML in /app/config/tables.local.yaml` at line 5 col 1** —
+Hidden UTF-8 BOM at the top of the file. Reset: `git checkout HEAD -- local/config/tables.local.yaml`.
+Prevent recurrence by setting your editor to plain "UTF-8" not "UTF-8 with BOM".
 
 **Iceberg JAR download fails** — First ingest fetches the runtime jars from
 Maven Central. If it's slow or fails, pre-download by running:

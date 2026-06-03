@@ -60,9 +60,17 @@ ERR
 fi
 
 # --- Optional: wipe stale watermark state + warehouse before re-seeding --- #
-# Useful when the previous attempt advanced the watermark on empty data —
-# without wiping, the next ingest's window starts in the future and skips
-# the freshly-seeded rows.
+# Useful when the previous attempt advanced the watermark on empty data,
+# OR when you want a totally fresh strata state. "Wipe state" really means
+# THREE things that must stay in sync, otherwise you get a stale-catalog
+# FileNotFoundException on the next run:
+#   1. SQLite state DB  (local/data/state/)
+#   2. Iceberg warehouse files  (local/data/warehouse/)
+#   3. Iceberg JDBC catalog tables in Postgres  (public.iceberg_*)
+# The Iceberg catalog lives inside the data_mart Postgres database and
+# stores "which tables exist + where their metadata files live". Wiping
+# #2 without wiping #3 leaves the catalog pointing at gone files and
+# Spark fails with "Failed to open input stream for file: ...metadata.json".
 if [ "$WIPE_STATE" = "true" ]; then
   echo "[seed] wiping SQLite state + Iceberg warehouse on the host..."
   $COMPOSE down >/dev/null 2>&1 || true
@@ -76,6 +84,12 @@ if [ "$WIPE_STATE" = "true" ]; then
     fi
     sleep 1
   done
+
+  echo "[seed] dropping orphan Iceberg JDBC catalog tables in Postgres..."
+  $COMPOSE exec -T postgres psql -U strata -d data_mart -c "
+    DROP TABLE IF EXISTS public.iceberg_tables;
+    DROP TABLE IF EXISTS public.iceberg_namespace_properties;
+  " >/dev/null
 fi
 
 # --- Stage bootstrap.py into the spark container --- #

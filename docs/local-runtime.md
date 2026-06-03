@@ -361,16 +361,49 @@ docker compose -f local/docker-compose.yml down -v
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `setup.sh` fails on `pg_isready` | Postgres container not started; check `docker ps` |
-| Ingest fails with "connection refused" | Spark container can't reach postgres; check both are on `strata-network` |
-| Trino UI shows "no tables" | Restart Trino: `docker compose -f local/docker-compose.yml restart trino` |
-| Superset login fails | Wait longer; first-time init runs migrations. Re-check `docker compose ... logs superset` |
-| First Spark ingest is very slow | Iceberg JARs downloading from Maven Central; subsequent runs are warm |
-| `Permission denied` on warehouse files | Linux only: `sudo chown -R $(id -u):$(id -g) local/data` |
-| Need fresh data without resetting state | `./local/scripts/seed.sh --no-reset --days 7 --payments-per-day 200` |
-| Ingests succeed but `rows_written=0`, dashboards empty | Postgres data mart is empty (seed silently failed on an earlier setup). `./local/scripts/seed.sh --wipe-state` re-seeds and clears stale watermark, then `./local/scripts/run-all.sh --full-refresh` |
+The canonical reference for "what just went wrong on my laptop." Every
+row corresponds to a real failure mode someone has hit, with the
+mechanical cause and the fix command. If you hit something not in this
+table, add it.
+
+### Stack-level (containers, services, ports)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `setup.sh` fails on `pg_isready` | Postgres container not started or unhealthy | Check `docker ps`. If postgres isn't listed, look at `docker compose -f local/docker-compose.yml logs postgres` for the underlying error. |
+| Ingest fails with "connection refused" | Spark container can't reach postgres | Confirm both are on the `strata-network` Docker network. `docker network inspect strata-network` should list both. |
+| Trino UI shows "no tables" or "no schemas" | Trino caches catalog state at startup; if Spark wrote after Trino booted, Trino may not see it yet | Restart Trino: `docker compose -f local/docker-compose.yml restart trino`. Wait ~10s, retry. |
+| Superset login fails or hangs | First-time Superset init runs DB migrations and creates the admin user; takes 30-60s on first boot | Wait longer. Check progress with `docker compose -f local/docker-compose.yml logs -f superset`. Default creds are `admin / admin`. |
+| First Spark ingest is very slow (~2 min on first run) | Iceberg JARs downloading from Maven Central via `spark.jars.packages` | Expected. Subsequent runs are warm because the Ivy cache at `/root/.ivy2/cache/` inside the spark container is populated. |
+| `Permission denied` on warehouse files | Linux-host UID mismatch with container UID | `sudo chown -R $(id -u):$(id -g) local/data` |
+
+### Configuration & secrets
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Ingest fails: `secret file not found in /app/secrets/db.local.json` (or `setup.sh` complains about a missing `.example`) | An older `.gitignore` excluded the whole `local/secrets/` directory at clone time, so neither the real secret nor the `.example` template made it into the working tree | Pull latest (the `.gitignore` now keeps `*.example` and `.gitkeep` inside `secrets/`). If you can't pull, create the file by hand: `setup.sh` step 3 prints the exact JSON to paste, or see [setup-local.prompt.md](../.github/prompts/setup-local.prompt.md). |
+| Ingest fails: `Config error: Invalid YAML in /app/config/tables.local.yaml: expected '<document start>', but found '<block mapping start>'` at line 5 column 1 | Hidden UTF-8 BOM at the top of `tables.local.yaml` (3 bytes: `EF BB BF`). PyYAML 6.x treats it as content and gets confused about document boundaries | Confirm BOM with `head -1 local/config/tables.local.yaml \| hexdump -C \| head -1` (first three bytes are `ef bb bf` if it's a BOM). Reset from the repo: `git checkout HEAD -- local/config/tables.local.yaml`. Or strip in place: `sed -i.bak '1s/^\xEF\xBB\xBF//' local/config/tables.local.yaml`. Prevent recurrence by setting your editor to "UTF-8" not "UTF-8 with BOM". |
+
+### Spark / JDBC driver
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Ingest fails: `ClassCastException: org.postgresql.Driver` or `ClassNotFoundException: org.postgresql.Driver` during the extract step (after Iceberg catalog already connected fine) | Spark's `spark.read.format("jdbc")` source reader can't find the driver class. `spark.jars.packages` lands the JAR where the Iceberg catalog finds it but not always where Spark's reflection-based driver lookup finds it | The repo's Spark Dockerfile bakes the JAR into `$PYSPARK_HOME/jars/`. Pull latest, then rebuild the image: `docker compose -f local/docker-compose.yml build --no-cache spark && docker compose -f local/docker-compose.yml up -d --force-recreate spark`. Verify: `docker compose -f local/docker-compose.yml exec spark ls /usr/local/lib/python3.10/dist-packages/pyspark/jars/ \| grep postgresql` should print `postgresql-42.7.3.jar`. |
+
+### Iceberg catalog / warehouse consistency
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Ingest fails: `org.apache.iceberg.exceptions.NotFoundException: Failed to open input stream for file: file:/data/warehouse/silver_*/metadata/...metadata.json` | Stale Iceberg JDBC catalog. The catalog (in Postgres tables `public.iceberg_tables` and `public.iceberg_namespace_properties`) points at metadata files that were wiped from the warehouse. Catalog + warehouse must stay in lockstep. | Drop the orphan catalog rows: `docker compose -f local/docker-compose.yml exec -T postgres psql -U strata -d data_mart -c "DROP TABLE IF EXISTS public.iceberg_tables; DROP TABLE IF EXISTS public.iceberg_namespace_properties;"`. Then re-run: `./local/scripts/run-all.sh --full-refresh`. Going forward, `./local/scripts/seed.sh --wipe-state` cleans all three storage tiers (SQLite state + warehouse + Iceberg catalog) atomically. |
+| Ingests succeed but `rows_written=0` for every table; dashboards empty; Trino sees the schemas but zero rows | Postgres data mart is empty (bootstrap seeder silently failed on an earlier setup). Strata is doing exactly what it's supposed to: extracting from an empty source and committing a zero-row snapshot. Watermark advances, so subsequent runs would also write zero. | `./local/scripts/seed.sh --wipe-state` (re-seeds Postgres + clears stale watermark + drops orphan catalog), then `./local/scripts/run-all.sh --full-refresh`. Should see `rows_written=15000` for `FACT_PAYMENT`. |
+
+### Day-to-day operations
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Need fresh data without losing state | You want more synthetic data layered on top of what's already there | `./local/scripts/seed.sh --no-reset --days 7 --payments-per-day 200` |
+| Want a completely clean slate | Test something from scratch | `docker compose -f local/docker-compose.yml down -v && rm -rf local/data/state local/data/warehouse && ./local/scripts/setup.sh` |
+| Bash script error: `EXTRA_ARGS[@]: unbound variable` from `seed.sh` | Empty array expanded under bash `set -u` strict mode. Fixed in repo by using `${ARR[@]+"${ARR[@]}"}` form. | Pull latest. |
 
 ## What you've verified
 
