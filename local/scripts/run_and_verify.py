@@ -38,11 +38,17 @@ from inspect_state import collect, parse_args as inspect_parse_args  # noqa: E40
 
 
 def _inspect(table: str) -> dict:
+    """Snapshot state via the inspector's collect() — same dict shape
+    the inspector emits with --json."""
     args = inspect_parse_args(["--table", table, "--snapshots", "3"])
     return collect(args)
 
 
 def _run_ingest(table: str, full_refresh: bool) -> int:
+    """Shell out to `python -m strata.local_ingest`. We run it as a
+    subprocess (rather than calling local_ingest.main directly) so its
+    Spark session is fully torn down before the post-inspect runs —
+    otherwise we'd hit "two Spark sessions in one process" errors."""
     cmd = ["python", "-m", "strata.local_ingest", "--table", table]
     if full_refresh:
         cmd.append("--full-refresh")
@@ -82,6 +88,7 @@ def _delta(before: dict, after: dict) -> dict:
 
 
 def _render_delta(d: dict) -> str:
+    """Format the delta dict as the readable seven-line report block."""
     lines = ["\n=== ingest delta ==="]
 
     arrow = "→" if d["watermark_advanced"] else "= (unchanged)"
@@ -112,6 +119,8 @@ def _check_expectations(d: dict, expect_delta: int | None) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args. `--expect-delta` is the assertion knob — set it
+    in CI or scripted tests to fail-fast on a wrong row count."""
     p = argparse.ArgumentParser(description="run strata ingest and diff state")
     p.add_argument("--table", default="FACT_PAYMENT")
     p.add_argument("--full-refresh", action="store_true",
@@ -123,6 +132,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run ingest with before/after state diff. Exits with the worse of
+    the ingest exit code and the `--expect-delta` assertion result, so
+    a failed assertion fails the script even if the ingest itself
+    returned 0."""
     args = parse_args(argv)
     table = args.table
 

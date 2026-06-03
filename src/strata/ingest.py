@@ -74,6 +74,12 @@ OPTIONAL_DEFAULTS = {
 
 
 def resolve_args() -> dict:
+    """Resolve Glue job arguments, applying defaults for the optional ones.
+
+    Glue's `getResolvedOptions` raises if an "optional" arg isn't passed,
+    so we check `sys.argv` first for each optional key and only call it
+    when present. Returns a flat dict ready for use.
+    """
     args = getResolvedOptions(sys.argv, REQUIRED)
     for k, v in OPTIONAL_DEFAULTS.items():
         if f"--{k}" in sys.argv:
@@ -88,6 +94,13 @@ def resolve_args() -> dict:
 # Spark + Iceberg session
 # --------------------------------------------------------------------------- #
 def build_spark(lake_s3_uri: str):
+    """Construct the Glue Spark session with Iceberg + Glue Catalog wired in.
+
+    Sets the warehouse to S3, registers GlueCatalog as the metadata layer,
+    and turns on adaptive query execution. Returns the (SparkContext,
+    GlueContext, SparkSession) triple — Glue jobs traditionally need all
+    three for different APIs.
+    """
     sc = SparkContext.getOrCreate()
     sc.setLogLevel("WARN")
 
@@ -115,6 +128,14 @@ def build_spark(lake_s3_uri: str):
 # Metadata column enrichment
 # --------------------------------------------------------------------------- #
 def add_metadata(df, run_id: str, source_table: str, committed_at: str):
+    """Attach the four strata lineage columns to a freshly-extracted DataFrame.
+
+    The four columns — `_ingest_run_id`, `_ingest_timestamp`,
+    `_source_table`, `_ingest_date` — let downstream consumers dedupe
+    by latest ingest, trace each row back to a specific Glue run, and
+    partition by ingest date. Match the corresponding logic in
+    `strata.local_ingest.add_metadata` exactly.
+    """
     from pyspark.sql import functions as F
 
     return (
@@ -182,6 +203,34 @@ def compute_new_watermark(df, cfg: TableConfig, fallback_upper: str) -> str:
 # Main pipeline
 # --------------------------------------------------------------------------- #
 def main():
+    """Glue job entry point. Runs one logical ingest end-to-end.
+
+    The pipeline, in order:
+      1. Parse + validate args.
+      2. Build Spark session with GlueCatalog + Iceberg.
+      3. Reconcile DynamoDB ↔ Iceberg state (five-case recovery in
+         `strata.recovery`). Recovery may force-advance the watermark
+         to match an orphan Iceberg snapshot — see Case C there.
+      4. Compute the bounded window `(current_watermark, now()]`
+         (or `(None, now()]` for full-refresh).
+      5. Acquire the lock in DynamoDB via conditional update.
+      6. Extract with retry (bounded by the window).
+      7. Add lineage columns (`_ingest_run_id` etc.).
+      8. Heartbeat the lock so long extracts don't expire it.
+      9. Write to Iceberg with idempotency check on `glue.run_id` snapshot
+         property — same run_id won't double-commit.
+      10. Compute the new watermark from MAX(watermark_column) in the
+          actually-written batch.
+      11. State.complete(): advance watermark, release lock, conditional
+          on `pending_run_id = my run_id`.
+
+    Exit codes (also see strata.local_ingest.main for parity):
+      0 — success or no-op,
+      1 — pipeline failure (transient or permanent),
+      2 — config error,
+      3 — schema drift (operator intervention required),
+      4 — state inconsistency (recovery couldn't reconcile).
+    """
     started_at = time.time()
     args = resolve_args()
     safe_args = {k: v for k, v in args.items() if "password" not in k.lower()}

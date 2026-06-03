@@ -20,6 +20,12 @@ class LocalMetrics:
         unit: str = "Count",
         extra_dimensions: dict[str, str] | None = None,
     ) -> None:
+        """Print a metric line that mirrors CloudWatch PutMetricData shape.
+
+        Format: ``METRIC table=<T> customer=local <Name>=<Value> <Unit>``.
+        Grep-friendly so a developer can pull, say, all `RowsWritten`
+        values out of a long run log with `grep "METRIC.*RowsWritten"`.
+        """
         extras = (
             " " + " ".join(f"{k}={v}" for k, v in extra_dimensions.items())
             if extra_dimensions
@@ -32,5 +38,11 @@ class LocalMetrics:
 
 
 def log_event(event: str, **kv: Any) -> None:
+    """Print a structured event line, parallel to strata.metrics.log_event.
+
+    Format: ``EVENT=<name> k1='v1' k2='v2' ...``. Used at run boundaries
+    (``run_started``, ``run_completed``, ``state_reconciled``) so an
+    operator can reconstruct the run timeline from log output alone.
+    """
     pairs = " ".join(f"{k}={v!r}" for k, v in kv.items())
     log.info("EVENT=%s %s", event, pairs)

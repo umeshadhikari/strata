@@ -115,6 +115,12 @@ def load_iceberg_state(table_fqn: str, snapshot_limit: int) -> dict | None:
 
 
 def collect(args) -> dict:
+    """Snapshot state from all three sources into a single dict.
+
+    Returned shape is also what `--json` mode serialises directly, and
+    what `run_and_verify._delta()` consumes for before/after diffs —
+    so the keys here are part of the contract with that script.
+    """
     pg = load_postgres_state(args.source_table)
     sqlite = load_sqlite_state(args.state_db, args.table)
     iceberg = load_iceberg_state(args.table_fqn, args.snapshots)
@@ -129,7 +135,7 @@ def collect(args) -> dict:
 
 
 def fmt_table(rows: list[tuple[str, str]]) -> str:
-    """Two-column key/value formatter."""
+    """Pretty-print a list of (key, value) pairs as a two-column block."""
     if not rows:
         return "  (no data)"
     w = max(len(k) for k, _ in rows)
@@ -137,6 +143,14 @@ def fmt_table(rows: list[tuple[str, str]]) -> str:
 
 
 def render_human(state: dict) -> str:
+    """Render the state dict as the readable three-block report.
+
+    Block 1 is Postgres source (upstream truth), block 2 is the SQLite
+    state DB (strata's bookkeeping), block 3 is Iceberg (committed
+    truth). The closing summary highlights the three conditions
+    operators usually care about: watermark caught up, stale lock,
+    state-vs-snapshot drift.
+    """
     lines = [
         f"\n=== strata state for table: {state['table']} ===",
         f"  captured_at: {state['captured_at']}",
@@ -231,6 +245,9 @@ def render_human(state: dict) -> str:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args. The `--table-fqn` default is derived from `--table`
+    using a static domain→database map that mirrors the YAML config's
+    `glue_database_prefix` + domain scheme."""
     p = argparse.ArgumentParser(description="strata state inspector")
     p.add_argument("--table", default="FACT_PAYMENT",
                    help="Logical table name (default: FACT_PAYMENT)")
@@ -263,6 +280,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Inspect strata state and print it. Always exits 0 — this is a
+    read-only tool, so failures during collection are surfaced inline
+    in the report rather than via exit code."""
     args = parse_args(argv)
     state = collect(args)
     if args.json:

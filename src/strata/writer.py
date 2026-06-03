@@ -42,6 +42,13 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class WriteResult:
+    """Return value of `write_iceberg`.
+
+    `was_idempotent_skip=True` means the writer detected an existing
+    Iceberg snapshot with the same `glue.run_id` and short-circuited
+    without re-writing — the row count from that earlier commit is
+    authoritative.
+    """
     rows_written: int
     snapshot_id: int | None
     was_idempotent_skip: bool = False

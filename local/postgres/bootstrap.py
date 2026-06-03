@@ -99,6 +99,13 @@ APPROVERS = [f"u_{i:03d}" for i in range(1, 51)]
 # Helpers
 # --------------------------------------------------------------------------- #
 def connect():
+    """Open a psycopg2 connection to the local data_mart Postgres.
+
+    Auto-detects whether we're inside the spark Docker container
+    (hostname `postgres`) or running on the host (`localhost`). All
+    other connection params come from PG* env vars with sensible
+    docker-compose-aligned defaults.
+    """
     default_host = "postgres" if os.path.exists("/.dockerenv") else "localhost"
     return psycopg2.connect(
         host=os.environ.get("PGHOST", default_host),
@@ -176,11 +183,20 @@ def upsert_dims(cur) -> None:
 
 
 def truncate_facts(cur) -> None:
+    """Empty the two fact tables. Called only when `--reset` is passed."""
     print("  → TRUNCATE FACT_PAYMENT, FACT_BALANCE")
     cur.execute("TRUNCATE TABLE data_mart.FACT_PAYMENT, data_mart.FACT_BALANCE")
 
 
 def generate_payments(start_date: date, days: int, per_day: int, start_pk: int):
+    """Generate synthetic payment rows distributed across the date range.
+
+    Returns a (rows, next_pk) tuple where rows is a list of tuples ready
+    for `execute_values` and next_pk is one past the highest PK used.
+    Each row gets `last_updated_time = input_time`, which means
+    incremental ingests after seeding see "everything is old" until
+    fresh data is injected (`add_incremental_data.py`).
+    """
     rows = []
     pk = start_pk
     account_ids = [a[0] for a in ACCOUNTS]
@@ -228,6 +244,13 @@ def generate_payments(start_date: date, days: int, per_day: int, start_pk: int):
 
 
 def generate_balances(start_date: date, days: int, start_pk: int):
+    """Generate one balance row per account × day × subset of currencies.
+
+    Each account gets balances in 3 randomly-chosen currencies per day
+    (rather than all 6) so the data has realistic sparsity. Opening and
+    closing balances are independent random values; closing is derived
+    by adding a swing in ±$200K to opening.
+    """
     rows = []
     pk = start_pk
     account_owner = {a[0]: a[4] for a in ACCOUNTS}
@@ -260,6 +283,7 @@ def generate_balances(start_date: date, days: int, start_pk: int):
 
 
 def insert_facts(cur, payments, balances) -> None:
+    """Bulk-insert generated fact rows in 500-row batches."""
     print(f"  → inserting {len(payments):,} payments")
     execute_values(
         cur,
@@ -285,6 +309,9 @@ def insert_facts(cur, payments, balances) -> None:
 
 
 def print_summary(cur) -> None:
+    """Print a one-line summary of every data_mart table — row count
+    plus max watermark. Used as the final step in main() so a developer
+    knows immediately whether the seed worked."""
     print()
     print("Database summary:")
     for table in [
@@ -304,6 +331,13 @@ def print_summary(cur) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def main():
+    """Seed the local Postgres data mart with synthetic data.
+
+    Idempotent across re-runs: dims are upserted (ON CONFLICT DO UPDATE),
+    facts are appended unless `--reset` is passed. Pass `--reset` when
+    you want a clean slate before running tests that count rows from
+    zero.
+    """
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--payments-per-day", type=int, default=500)

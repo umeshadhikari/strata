@@ -22,6 +22,13 @@ WAREHOUSE = Path(os.environ.get("STRATA_WAREHOUSE", "local/data/warehouse")).res
 
 @st.cache_resource
 def get_connection():
+    """Open a DuckDB session with the Iceberg extension and register
+    every Iceberg table in the local warehouse as a DuckDB view.
+
+    Cached so Streamlit reuses the same in-memory DuckDB across reruns
+    of the page — otherwise every widget interaction would re-scan all
+    table metadata.
+    """
     con = duckdb.connect(":memory:")
     con.execute("INSTALL iceberg")
     con.execute("LOAD iceberg")
@@ -43,6 +50,8 @@ def get_connection():
 
 @st.cache_data(ttl=60)
 def query(sql: str) -> pd.DataFrame:
+    """Run SQL through DuckDB and return the result as a DataFrame.
+    Cached for 60 seconds so rapid widget changes don't hammer DuckDB."""
     return get_connection().execute(sql).fetchdf()
 
 

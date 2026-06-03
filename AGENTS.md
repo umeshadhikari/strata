@@ -22,6 +22,37 @@ After any failure mode, the next run resumes cleanly with no data loss and
 no duplication. The implementation of this guarantee is the most important
 invariant in the codebase.
 
+## Setup paths — where to send a user who wants to run strata
+
+If a user asks how to set up, install, run, or deploy strata, send them
+to the right canonical doc based on what they're trying to do. Don't
+reinvent setup instructions inline — these docs are the single source
+of truth and stay in sync with the actual code and Terraform.
+
+| User wants to… | Send them to | Copilot prompt |
+|---|---|---|
+| Run strata on their laptop with no AWS account | [`docs/local-runtime.md`](docs/local-runtime.md) + [`local/README.md`](local/README.md) | `/setup-local` |
+| Verify incremental ingestion works (testing watermark, idempotency) | [`docs/testing-incremental.md`](docs/testing-incremental.md) | (combine `/setup-local` then the test scripts) |
+| Deploy strata to their own AWS sandbox for dev/test | [`docs/aws-runtime.md`](docs/aws-runtime.md) | `/new-customer` (set `customer_id = sandbox-<your-name>`) |
+| Onboard a real customer to production | [`docs/aws-runtime.md`](docs/aws-runtime.md) + the operational runbook | `/new-customer` |
+| Understand the architecture before doing anything | [`docs/architecture.md`](docs/architecture.md) | (no prompt — read the doc) |
+| Run a backfill after deploying | [`docs/operational-runbook.md`](docs/operational-runbook.md) | `/backfill` |
+
+The TL;DR for orientation:
+
+- **Local dev** = Docker Compose stack (Postgres + Spark + Trino +
+  Superset). Same code, different backends. Iceberg metadata lives in
+  PostgreSQL via the JDBC catalog; warehouse is a local directory.
+  Takes ~5 minutes to stand up, ~3 minutes to seed and run the first
+  ingest. No AWS account needed.
+- **AWS dev** = a personal sandbox account with the full Terraform
+  module applied, a small source DB pointed at, and `customer_id` set
+  to something like `sandbox-<your-name>`. Same workflow as a customer
+  deployment, just with disposable credentials.
+- **AWS production** = the customer onboarding workflow (`/new-customer`
+  prompt or `docs/aws-runtime.md`). 25 resources, 10 deployment steps,
+  ends with a scheduled 06:00 UTC trigger.
+
 ## Architectural invariants — do not violate
 
 These four properties make the recovery guarantees work. Any change that
@@ -124,12 +155,13 @@ modules.
 
 | Task | Claude (`/cmd` or agent) | Copilot (prompt) |
 |---|---|---|
+| **Set up local dev environment** | `/setup-local` | `/setup-local` |
+| **Set up AWS environment (dev or customer)** | `/new-customer` or `new-customer-stamp` skill | `/new-customer` |
 | Add a new source table | `/add-table` or `table-author` agent | `/add-table` |
 | Debug a failed Glue run | `/debug` or `glue-debugger` agent | `/debug` |
 | Review a PR for reliability impact | `/review` or `reliability-reviewer` agent | `/review` |
 | Run or plan a backfill | `/backfill` | `/backfill` |
 | Resolve a `SchemaDriftError` | `/schema-drift` or `schema-drift-resolver` agent | `/schema-drift` |
-| Onboard a new customer (deploy terraform) | `/new-customer` or `new-customer-stamp` skill | `/new-customer` |
 | Prep a release | `/release` or `prepare-release` skill | `/release` |
 | Recommend partition spec for a new table | `partition-tuner` agent | follow `docs/partitioning.md` |
 | Write tests for a new function | `test-author` agent | use the test conventions above |

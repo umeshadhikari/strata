@@ -80,6 +80,13 @@ class TableConfig:
 
 
 def _parse_partition_spec(raw: list[dict[str, Any]] | None) -> list[PartitionTransform]:
+    """Validate and parse the YAML `partition_spec` list.
+
+    Each item must specify `transform` (one of identity/days/months/
+    years/bucket/truncate) and `column`. `bucket` and `truncate` also
+    require `n`. Invalid input raises ConfigError so failures happen at
+    config-load time rather than during a Spark write.
+    """
     if not raw:
         return []
     out: list[PartitionTransform] = []
@@ -95,6 +102,11 @@ def _parse_partition_spec(raw: list[dict[str, Any]] | None) -> list[PartitionTra
 
 
 def _parse_parallel(raw: dict[str, Any] | None) -> ParallelExtract | None:
+    """Validate and parse the optional `parallel_extract` YAML block.
+
+    Returns None when absent (sequential read). When present, requires
+    `column`, `lower_bound`, `upper_bound`; `num_partitions` defaults to 4.
+    """
     if not raw:
         return None
     return ParallelExtract(

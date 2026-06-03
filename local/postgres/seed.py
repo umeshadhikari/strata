@@ -1,5 +1,11 @@
 """
-Generate synthetic payment + balance data in the local PostgreSQL data mart.
+Legacy synthetic-data seeder for the local Postgres data mart.
+
+**Superseded by `bootstrap.py`** — the current `setup.sh` calls
+bootstrap, which generates richer data (6 currencies vs 4, more
+accounts, more countries) and upserts dims rather than truncating.
+This file is kept for backwards compatibility with older test scripts
+that import its generators directly.
 
 Usage:
     python local/postgres/seed.py --days 30 --payments-per-day 1000
@@ -30,6 +36,8 @@ APPROVERS = [f"u_{i:03d}" for i in range(1, 51)]
 
 
 def connect():
+    """Auto-detecting Postgres connection. See bootstrap.py:connect()
+    for the canonical version."""
     # When run from the spark container, postgres is reachable as 'postgres'.
     # When run from the host, it's localhost. Auto-detect.
     default_host = "postgres" if os.path.exists("/.dockerenv") else "localhost"
@@ -43,6 +51,8 @@ def connect():
 
 
 def generate_payments(start_date: date, days: int, per_day: int, start_pk: int):
+    """Generate synthetic payment rows. See bootstrap.py for the richer
+    current generator; this one is the simpler legacy version."""
     rows = []
     pk = start_pk
     for d in range(days):
@@ -83,6 +93,9 @@ def generate_payments(start_date: date, days: int, per_day: int, start_pk: int):
 
 
 def generate_balances(start_date: date, days: int, start_pk: int):
+    """Generate one balance row per account × day × currency. Three
+    fixed account_ids — the legacy generator uses a smaller universe
+    than bootstrap.py."""
     rows = []
     pk = start_pk
     for d in range(days):
@@ -110,6 +123,8 @@ def generate_balances(start_date: date, days: int, start_pk: int):
 
 
 def main():
+    """Seed Postgres with the legacy generator. Most local-dev work
+    should use bootstrap.py via setup.sh instead."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=30, help="Days of history to generate")
     parser.add_argument(

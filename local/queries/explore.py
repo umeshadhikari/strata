@@ -40,6 +40,9 @@ def find_iceberg_tables(warehouse: Path) -> dict[str, Path]:
 
 
 def build_connection(warehouse: Path):
+    """Open a DuckDB connection and register every Iceberg table in
+    `warehouse` as a queryable view. Mirrors `dashboard.py`'s
+    `get_connection` but without the Streamlit caching wrapper."""
     con = duckdb.connect(":memory:")
     con.execute("INSTALL iceberg")
     con.execute("LOAD iceberg")
@@ -57,6 +60,13 @@ def build_connection(warehouse: Path):
 
 
 def main():
+    """Run a one-off SQL query or drop into an interactive DuckDB shell.
+
+    With a `query` arg, prints the result as a table and exits.
+    Without one, opens an interactive DuckDB shell with all the local
+    Iceberg tables pre-registered as views — handy for quick ad-hoc
+    exploration without needing to bring up Trino + Superset.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("query", nargs="?", help="SQL to run; omit to enter shell")
     parser.add_argument(

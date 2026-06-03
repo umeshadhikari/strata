@@ -59,10 +59,19 @@ LOCK_TTL_SECONDS = int(os.environ.get("TRAX_LOCK_TTL_SECONDS", 7200))  # 2 hours
 
 
 def now_utc() -> datetime:
+    """Current time, always tz-aware UTC. Centralised so retries/tests
+    can monkey-patch this single function instead of mocking datetime."""
     return datetime.now(timezone.utc)
 
 
 def iso(t: datetime) -> str:
+    """Format a datetime as ISO-8601 with seconds precision.
+
+    Used for every timestamp written to DynamoDB so string comparisons
+    sort correctly — the trailing fractional seconds that
+    `datetime.isoformat()` includes by default would break the
+    `pending_expires_at > :now` ConditionExpression's comparison.
+    """
     return t.isoformat(timespec="seconds")
 
 
@@ -84,6 +93,7 @@ class TableState:
 
     @property
     def is_locked(self) -> bool:
+        """True if another run currently holds the lock and it hasn't expired."""
         if not self.pending_run_id:
             return False
         if not self.pending_expires_at:
@@ -92,6 +102,12 @@ class TableState:
 
 
 def _from_item(item: dict[str, Any] | None, table_name: str) -> TableState:
+    """Convert a DynamoDB GetItem response into a TableState dataclass.
+
+    Returns a fresh "no state yet" TableState (all fields None, version=0)
+    when `item` is None — the case where the row doesn't exist yet on the
+    very first run of a new table.
+    """
     if not item:
         return TableState(
             table_name=table_name,
@@ -142,6 +158,12 @@ class StateManager:
 
     # -------- READ -------- #
     def read(self) -> TableState:
+        """Strongly-consistent read of the table's current state.
+
+        `ConsistentRead=True` is non-negotiable here — eventual reads
+        could miss a just-completed run and reissue an already-committed
+        window, which would break the at-least-once contract.
+        """
         try:
             resp = self.client.get_item(
                 TableName=self.dynamo_table,

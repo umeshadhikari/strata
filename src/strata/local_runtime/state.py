@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS strata_state (
 
 
 def _row_to_state(row: sqlite3.Row | None, table_name: str) -> TableState:
+    """Convert a SQLite row into the same TableState dataclass that
+    `strata.state._from_item` produces from DynamoDB. Returning the
+    same shape from both backends is what lets `strata.recovery`
+    work unchanged across local and AWS runtimes."""
     if row is None:
         return TableState(
             table_name=table_name,

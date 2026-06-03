@@ -43,6 +43,13 @@ APPROVERS = [f"u_{i:03d}" for i in range(1, 51)]
 
 
 def connect():
+    """Connect to the local Postgres data mart.
+
+    Auto-detects whether we're inside the spark Docker container (uses
+    the compose-network hostname `postgres`) or running on the host
+    (uses `localhost`). Credentials and database name match the
+    docker-compose defaults; override via PG* env vars.
+    """
     default_host = "postgres" if os.path.exists("/.dockerenv") else "localhost"
     return psycopg2.connect(
         host=os.environ.get("PGHOST", default_host),
@@ -156,6 +163,10 @@ def update_existing_payments(conn, n: int, run_label: str) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args. Exactly one of --inserts/--updates/--mixed is
+    required so the caller's intent is explicit; `--label` lets you tie
+    a batch back to a test name in logs; `--seed` makes synthetic data
+    reproducible across runs."""
     p = argparse.ArgumentParser(
         description="Inject incremental test data into Postgres"
     )
@@ -173,6 +184,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Inject rows into Postgres according to the chosen mode.
+
+    Exits 0 on success. Errors propagate naturally as psycopg2
+    exceptions — there's no recovery to do because this script makes no
+    promises beyond "the insert/update either committed or it didn't."
+    """
     args = parse_args(argv)
     if args.seed is not None:
         random.seed(args.seed)

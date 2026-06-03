@@ -54,6 +54,13 @@ DEFAULTS = {
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args for the local ingest entry point.
+
+    Accepts the same shape as the AWS Glue job, minus the AWS-specific
+    bits — `--table` plus optional `--full-refresh` and paths to
+    config/secrets/state. Defaults assume execution inside the spark
+    docker container (paths under `/app` and `/data`).
+    """
     p = argparse.ArgumentParser(description="strata local ingest")
     p.add_argument("--table", required=True, help="Logical table name from tables.yaml")
     p.add_argument(
@@ -69,6 +76,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def add_metadata(df, run_id: str, source_table: str, committed_at: str):
+    """Attach strata lineage columns to a freshly-extracted DataFrame.
+
+    The four columns added — `_ingest_run_id`, `_ingest_timestamp`,
+    `_source_table`, `_ingest_date` — let downstream consumers dedupe
+    by latest ingest, trace each row back to a specific Glue/local run,
+    and partition the Iceberg table by ingest date. Match the
+    corresponding logic in `strata.ingest.add_metadata` exactly.
+    """
     from pyspark.sql import functions as F
 
     return (
@@ -80,6 +95,13 @@ def add_metadata(df, run_id: str, source_table: str, committed_at: str):
 
 
 def compute_window(cfg, current_watermark: str | None, full_refresh: bool) -> ExtractWindow:
+    """Compute the bounded extraction window for this run.
+
+    Implements invariant #3 from AGENTS.md: `upper` is captured exactly
+    once here at run start, never recomputed inside extract or on retry.
+    Full refresh ignores the watermark and pulls everything; incremental
+    pulls `(current_watermark, upper]`.
+    """
     upper = iso(now_utc())
     if full_refresh:
         return ExtractWindow(lower=None, upper=upper, full_refresh=True)
@@ -87,6 +109,16 @@ def compute_window(cfg, current_watermark: str | None, full_refresh: bool) -> Ex
 
 
 def compute_new_watermark(df, cfg, fallback_upper: str) -> str:
+    """Derive the next watermark from what was actually written.
+
+    Preferred: `MAX(watermark_column)` from the committed DataFrame —
+    keeps the watermark exactly aligned with what's now in Iceberg, no
+    rounding gap. Falls back to `fallback_upper` (the `now()` captured
+    at run start) when the watermark column is absent or all-NULL.
+
+    Case-insensitive column lookup because Glue's JDBC reader sometimes
+    upper-cases names from Oracle and Iceberg lower-cases them.
+    """
     from pyspark.sql import functions as F
 
     if not cfg.watermark_column:
@@ -100,6 +132,18 @@ def compute_new_watermark(df, cfg, fallback_upper: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run one local ingest end-to-end. Returns the process exit code.
+
+    Mirrors `strata.ingest.main` in structure: parse args → load config
+    → build Spark → reconcile state → compute window → acquire lock →
+    extract+write with retry → advance watermark → complete. The
+    exit-code contract is the same as the AWS job:
+      0 — success or no-op,
+      1 — pipeline failure (transient or permanent),
+      2 — config error,
+      3 — schema drift (operator intervention required),
+      4 — state inconsistency (recovery couldn't reconcile).
+    """
     args = parse_args(argv)
     started = time.time()
     table = args.table
