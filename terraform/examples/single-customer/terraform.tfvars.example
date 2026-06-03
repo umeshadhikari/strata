@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in real values.
+
+aws_region   = "eu-west-1"
+customer_id  = "acme"
+
+# JDBC URL the Glue Connection uses to reach your source database.
+# Examples:
+#   Oracle:     "jdbc:oracle:thin:@//data-mart.internal:1521/DM"
+#   PostgreSQL: "jdbc:postgresql://data-mart.internal:5432/dm"
+data_mart_jdbc_url = "jdbc:oracle:thin:@//data-mart.internal:1521/DM"
+
+# VPC settings for the Glue Connection. The subnet must be able to reach the
+# data mart, and the security group must allow inbound from Glue's elastic
+# network interfaces.
+data_mart_subnet_id          = "subnet-0123456789abcdef0"
+data_mart_security_group_ids = ["sg-0123456789abcdef0"]
+data_mart_availability_zone  = "eu-west-1a"

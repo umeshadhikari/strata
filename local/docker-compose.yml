@@ -1,0 +1,112 @@
+# strata — local development stack
+#
+# Services:
+#   postgres  — Source DB + Iceberg JDBC catalog backend
+#   spark     — PySpark runtime where ingestion runs
+#   trino     — Athena substitute (queries Iceberg via JDBC catalog)
+#   superset  — QuickSight substitute (connects to Trino)
+#
+# Both Spark and Trino use the same JDBC catalog in PostgreSQL and the same
+# warehouse directory, so tables created by Spark are immediately visible to
+# Trino (and Superset).
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: strata-postgres
+    environment:
+      POSTGRES_DB: data_mart
+      POSTGRES_USER: strata
+      POSTGRES_PASSWORD: strata
+    # Host port defaults to 5433 to avoid colliding with a local Postgres
+    # install (Homebrew, Postgres.app, etc). Spark and Trino reach this
+    # service via the Docker network at port 5432, so internal config is
+    # unchanged. Override with: POSTGRES_HOST_PORT=15432 docker compose up
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U strata -d data_mart"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [strata]
+
+  # Spark runtime — the ingestion code runs here.
+  # The source mount lets you edit Python in your IDE and re-run without
+  # rebuilding the image.
+  #
+  # We build a small custom image rather than depending on bitnami/spark
+  # (whose tagging changed in late 2024) or apache/spark (whose Python
+  # tag naming is inconsistent across versions). See local/spark/Dockerfile.
+  spark:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    image: strata-spark:local
+    container_name: strata-spark
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: root
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app/src
+      STRATA_WAREHOUSE: file:///data/warehouse
+      STRATA_JDBC_CATALOG_URI: "jdbc:postgresql://postgres:5432/data_mart"
+      STRATA_JDBC_CATALOG_USER: strata
+      STRATA_JDBC_CATALOG_PASSWORD: strata
+      STRATA_SOURCE_JDBC_URL: "jdbc:postgresql://postgres:5432/data_mart"
+    volumes:
+      - ../src:/app/src:ro
+      - ../local/config:/app/config:ro
+      - ../local/secrets:/app/secrets:ro
+      - ./data/warehouse:/data/warehouse
+      - ./data/state:/data/state
+    # Stay running so we can `exec` ingestion commands without cold-starting
+    command: ["tail", "-f", "/dev/null"]
+    networks: [strata]
+
+  trino:
+    image: trinodb/trino:438
+    container_name: strata-trino
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${TRINO_HOST_PORT:-8080}:8080"
+    volumes:
+      - ./trino/etc:/etc/trino:ro
+      - ./data/warehouse:/data/warehouse
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [strata]
+
+  superset:
+    image: apache/superset:3.1.0
+    container_name: strata-superset
+    depends_on:
+      - trino
+    ports:
+      - "${SUPERSET_HOST_PORT:-8088}:8088"
+    environment:
+      SUPERSET_SECRET_KEY: local-dev-not-for-production-please-change
+      SUPERSET_LOAD_EXAMPLES: "no"
+    volumes:
+      - superset-data:/app/superset_home
+      - ./superset/superset_init.sh:/app/superset_init.sh:ro
+    command: ["/app/superset_init.sh"]
+    networks: [strata]
+
+networks:
+  strata:
+    name: strata-network
+
+volumes:
+  postgres-data:
+  superset-data:

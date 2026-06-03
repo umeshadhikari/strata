@@ -1,0 +1,193 @@
+# Trax Silver Ingestion — Per-Table Configuration
+# ================================================
+# One entry per data-mart table. The ingest_table.py job reads this to drive
+# everything: source location, watermark column, write mode, partitioning.
+#
+# To add a new table: append an entry. No code change needed.
+
+defaults:
+  source_schema: TRAX_DM           # change to your data mart schema name
+  write_mode: append               # append | overwrite
+  fetch_size: 10000
+  glue_database_prefix: silver_    # tables land in silver_<domain>
+
+tables:
+  # ============================================================
+  # PAYMENTS DOMAIN — fact tables
+  # ============================================================
+  FACT_PAYMENT:
+    source_table: FACT_PAYMENT
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [PAYMENT_ID]
+    partition_columns: [_ingest_date]   # daily partitions on write date
+    # Optional parallelism for big extracts:
+    parallel_extract:
+      column: PAYMENT_ID
+      lower_bound: 1
+      upper_bound: 100000000
+      num_partitions: 8
+
+  FACT_TRANSACTION:
+    source_table: FACT_TRANSACTION
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [TRANSACTION_ID]
+    partition_columns: [_ingest_date]
+    parallel_extract:
+      column: TRANSACTION_ID
+      lower_bound: 1
+      upper_bound: 500000000
+      num_partitions: 8
+
+  FACT_BALANCE:
+    source_table: FACT_BALANCE
+    domain: balances
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [BALANCE_ID]
+    partition_columns: [_ingest_date]
+
+  FACT_CURRENCY_EXCHANGE:
+    source_table: FACT_CURRENCY_EXCHANGE
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [FX_ID]
+    partition_columns: [_ingest_date]
+
+  FACT_TRANSACTION_BALANCE:
+    source_table: FACT_TRANSACTION_BALANCE
+    domain: balances
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [TRANSACTION_ID, BALANCE_ID]
+    partition_columns: [_ingest_date]
+
+  # ============================================================
+  # CONFORMED DIMENSIONS (shared across domains)
+  # ============================================================
+  DIM_DATE:
+    source_table: DIM_DATE
+    domain: shared
+    # DIM_DATE is static — load once, overwrite if reload requested
+    write_mode: overwrite
+    primary_key: [DATE_ID]
+    watermark_column: LAST_UPDATED_TIME    # rarely changes
+    partition_columns: []
+
+  DIM_CURRENCY:
+    source_table: DIM_CURRENCY
+    domain: shared
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [CURRENCY_ID]
+    partition_columns: []
+
+  DIM_DATA_OWNER:
+    source_table: DIM_DATA_OWNER
+    domain: shared
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [DATA_OWNER_ID]
+    partition_columns: []
+
+  DIM_ACCOUNT:
+    source_table: DIM_ACCOUNT
+    domain: shared
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [ACCOUNT_ID]
+    partition_columns: []
+
+  DIM_CLASSIFICATION:
+    source_table: DIM_CLASSIFICATION
+    domain: shared
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [CLASSIFICATION_ID]
+    partition_columns: []
+
+  # ============================================================
+  # PAYMENTS DOMAIN DIMENSIONS
+  # ============================================================
+  DIM_PAYMENT_METHOD:
+    source_table: DIM_PAYMENT_METHOD
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [PAYMENT_METHOD_ID]
+    partition_columns: []
+
+  DIM_PAYMENT_CHARACTERISTICS:
+    source_table: DIM_PAYMENT_CHARACTERISTICS
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [PAYMENT_CHARACTERISTICS_ID]
+    partition_columns: []
+
+  DIM_FX_PAY_CHARACTERISTICS:
+    source_table: DIM_FX_PAY_CHARACTERISTICS
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [FX_PAY_CHARACTERISTICS_ID]
+    partition_columns: []
+
+  DIM_TRANSACTION_TYPE:
+    source_table: DIM_TRANSACTION_TYPE
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [TRANSACTION_TYPE_ID]
+    partition_columns: []
+
+  DIM_TRANSACTION_CHARACTERISTICS:
+    source_table: DIM_TRANSACTION_CHARACTERISTICS
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [TRANSACTION_CHARACTERISTICS_ID]
+    partition_columns: []
+
+  DIM_FUNCT_OBJECT:
+    source_table: DIM_FUNCT_OBJECT
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [FUNCT_OBJECT_ID]
+    partition_columns: []
+
+  DIM_ROUTING:
+    source_table: DIM_ROUTING
+    domain: payments
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [ROUTING_ID]
+    partition_columns: []
+
+  # ============================================================
+  # BALANCES DOMAIN DIMENSIONS
+  # ============================================================
+  DIM_BALANCE_CHARACTERISTICS:
+    source_table: DIM_BALANCE_CHARACTERISTICS
+    domain: balances
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [BALANCE_CHARACTERISTICS_ID]
+    partition_columns: []
+
+  DIM_BALANCE_TYPE:
+    source_table: DIM_BALANCE_TYPE
+    domain: balances
+    watermark_column: LAST_UPDATED_TIME
+    primary_key: [BALANCE_TYPE_ID]
+    partition_columns: []
+
+# ============================================================
+# NOTES
+# ============================================================
+# - Add tables here as your data mart evolves. The ingest job is parameterised
+#   by table name, so the only thing you change is this file.
+#
+# - The watermark column is typically LAST_UPDATED_TIME on every fact and
+#   dim table in your data mart (visible in the model). If a table doesn't
+#   have one, use a monotonic primary key for the watermark instead.
+#
+# - For tables with very heavy daily volume (FACT_TRANSACTION typically),
+#   enable parallel_extract to fan out the JDBC read.
+#
+# - All Iceberg tables get the same Spark-derived schema as the source.
+#   No type coercion happens — types map directly:
+#     Oracle NUMBER -> Iceberg long/decimal
+#     Oracle VARCHAR2 -> Iceberg string
+#     Oracle DATE/TIMESTAMP -> Iceberg timestamp
+#
+# - The metadata columns _ingest_run_id, _ingest_timestamp, _source_table,
+#   _ingest_date are added by the job. _ingest_date is the partition column.

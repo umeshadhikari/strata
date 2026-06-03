@@ -1,0 +1,59 @@
+# Local tables.yaml — points at the PostgreSQL data mart in Docker.
+# This is a subset of the production tables.yaml, matching the schema in
+# local/postgres/init.sql.
+
+defaults:
+  source_schema: data_mart
+  write_mode: append
+  fetch_size: 5000
+  glue_database_prefix: silver_
+
+tables:
+
+  # ---------- Conformed dimensions ---------- #
+  DIM_CURRENCY:
+    source_table: dim_currency
+    domain: shared
+    watermark_column: last_updated_time
+    primary_key: [currency_id]
+    partition_spec: []
+
+  DIM_DATA_OWNER:
+    source_table: dim_data_owner
+    domain: shared
+    watermark_column: last_updated_time
+    primary_key: [data_owner_id]
+    partition_spec: []
+
+  DIM_ACCOUNT:
+    source_table: dim_account
+    domain: shared
+    watermark_column: last_updated_time
+    primary_key: [account_id]
+    partition_spec: []
+
+  DIM_PAYMENT_METHOD:
+    source_table: dim_payment_method
+    domain: payments
+    watermark_column: last_updated_time
+    primary_key: [payment_method_id]
+    partition_spec: []
+
+  # ---------- Facts ---------- #
+  FACT_PAYMENT:
+    source_table: fact_payment
+    domain: payments
+    watermark_column: last_updated_time
+    primary_key: [payment_id]
+    partition_spec:
+      - { transform: days,   column: value_date }
+      - { transform: bucket, column: data_owner_id, n: 4 }
+    sort_order: [value_date, payment_id]
+
+  FACT_BALANCE:
+    source_table: fact_balance
+    domain: balances
+    watermark_column: last_updated_time
+    primary_key: [balance_id]
+    partition_spec:
+      - { transform: days, column: balance_date }

@@ -1,0 +1,103 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "394ea014-c683-4206-9593-751d62b20a17",
+  "location" : "file:///data/warehouse/silver_balances/fact_balance",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1780437838641,
+  "last-column-id" : 12,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "balance_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "account_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "currency_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 4,
+      "name" : "balance_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 5,
+      "name" : "opening_balance",
+      "required" : false,
+      "type" : "decimal(18, 2)"
+    }, {
+      "id" : 6,
+      "name" : "closing_balance",
+      "required" : false,
+      "type" : "decimal(18, 2)"
+    }, {
+      "id" : 7,
+      "name" : "data_owner_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 8,
+      "name" : "last_updated_time",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 9,
+      "name" : "_ingest_run_id",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 10,
+      "name" : "_ingest_timestamp",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 11,
+      "name" : "_source_table",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 12,
+      "name" : "_ingest_date",
+      "required" : false,
+      "type" : "date"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "balance_date_day",
+      "transform" : "day",
+      "source-id" : 4,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.metadata.delete-after-commit.enabled" : "true",
+    "write.format.default" : "parquet",
+    "write.metadata.previous-versions-max" : "20",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}
