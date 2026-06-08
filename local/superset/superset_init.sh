@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+# superset_config.py is bind-mounted in from local/superset/superset_config.py
+# and selected via SUPERSET_CONFIG_PATH in docker-compose.yml. Keeping the
+# config out of this init script means it stays effective even if this
+# script never re-runs.
+
 echo "[superset] Installing Trino driver..."
 # Retry pip up to 3 times in case of network issues
 for i in 1 2 3; do

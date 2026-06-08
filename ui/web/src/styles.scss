@@ -1,0 +1,79 @@
+/* Global styles — Warm Terracotta palette consistent with the strata deck. */
+:root {
+  --bg:        #FAF7F2;
+  --bg-card:   #FFFFFF;
+  --bg-card-2: #F2EBDC;
+  --bg-dark:   #2C2520;
+  --primary:   #B85042;
+  --primary-dim: #d97765;
+  --secondary: #8B6F47;
+  --accent:    #5A8074;
+  --text:      #1F1A17;
+  --text-body: #3a3a3a;
+  --text-muted:#6B6259;
+  --rule:      #D4C9BD;
+  --error:     #c0392b;
+  --success:   #5A8074;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Calibri, Roboto, sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  &:hover { background: var(--primary-dim); }
+  &:disabled { background: var(--rule); cursor: not-allowed; }
+  &.ghost {
+    background: transparent;
+    color: var(--text-body);
+    border: 1px solid var(--rule);
+    &:hover { background: var(--bg-card-2); }
+  }
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--text);
+  width: 100%;
+  &:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.muted { color: var(--text-muted); }
+.error { color: var(--error); }
+.success { color: var(--success); }
+.kbd {
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  background: var(--bg-card-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
