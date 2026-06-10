@@ -1,0 +1,250 @@
+package com.strata.wizard.wizard;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.strata.wizard.rails.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.*;
+
+/**
+ * Heart of the wizard. Composes the LLM context with the rail registry,
+ * deterministic rail candidates, and detected beneficiary/account mentions
+ * — then walks the tool calls applying validators and auto-deriving BIC
+ * from IBAN. Behavior is intentionally identical to the FastAPI version.
+ */
+@Service
+public class WizardService {
+
+    private static final Logger log = LoggerFactory.getLogger(WizardService.class);
+
+    /** OpenAI-style tools grammar passed verbatim to Ollama. */
+    private static final List<Map<String, Object>> TOOLS = List.of(
+            tool("set_field",
+                    "Set a single field on the payment form. Use this for every fact you extract.",
+                    Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "field_id", Map.of("type", "string", "description", "Field id from available_fields."),
+                                    "value", Map.of("description", "Numbers as numbers, strings as strings."),
+                                    "confidence", Map.of("type", "number", "minimum", 0, "maximum", 1)
+                            ),
+                            "required", List.of("field_id", "value", "confidence")
+                    )),
+            tool("select_rail",
+                    "Select one rail from the server-provided candidates.",
+                    Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "rail_id", Map.of("type", "string"),
+                                    "why", Map.of("type", "string")
+                            ),
+                            "required", List.of("rail_id", "why")
+                    )),
+            tool("ask",
+                    "Ask the user for a missing or ambiguous field. Provide choices when enumerable.",
+                    Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "field_id", Map.of("type", "string"),
+                                    "prompt", Map.of("type", "string"),
+                                    "choices", Map.of("type", "array", "items", Map.of("type", "string"))
+                            ),
+                            "required", List.of("field_id", "prompt")
+                    )),
+            tool("explain",
+                    "Answer a 'what is X' question in 2-3 sentences. Does NOT mutate the form.",
+                    Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "topic", Map.of("type", "string"),
+                                    "body", Map.of("type", "string")
+                            ),
+                            "required", List.of("topic", "body")
+                    ))
+    );
+
+    private static Map<String, Object> tool(String name, String desc, Map<String, Object> params) {
+        return Map.of(
+                "type", "function",
+                "function", Map.of("name", name, "description", desc, "parameters", params)
+        );
+    }
+
+    private static final String SYSTEM_PROMPT = """
+            You are a payment-form assistant. The user describes a payment in natural language; you extract fields and emit tool calls. You are NOT allowed to reply with prose — every response must be one or more tool calls.
+
+            CRITICAL: You MUST invoke the tools via the function-calling interface. Do NOT write "set_field(...)" as plain text. Multiple tool calls per response are allowed and expected.
+
+            If the context contains `matched_beneficiaries` with one entry, that's a saved counterparty the user is referring to. Fan ALL its data into set_field calls: beneficiary_name, beneficiary_country, the preferred_currency, and every key in its `fields` map. Also call select_rail with its `preferred_rail`. Use high confidence (0.99) on these.
+
+            If the context contains `matched_debit_accounts` with at least one entry, pick the one whose currency matches the payment currency (or the first if none do) and set debit_account_id to its id with confidence 0.95+.
+
+            RULES
+            1. For every fact the user stated, emit set_field. Use the exact field_id from available_fields. Confidence 0.95+ when explicit, 0.6–0.8 when inferred.
+            2. If no rail is selected AND candidates is non-empty, emit select_rail with the first candidate.
+            3. After a rail is selected, only set fields that exist on that rail.
+            4. If something is missing or ambiguous, emit ask.
+            5. Country codes ISO 3166-1 alpha-2 (DE, GB, US, IN, BR). Currency codes ISO 4217 uppercase. Amounts as plain numbers.
+
+            EXAMPLES
+            User: "send 5000 EUR to Acme GmbH in Germany IBAN DE89370400440532013000"
+            You: tool-call set_field amount=5000 0.99; set_field currency="EUR" 0.99; set_field beneficiary_country="DE" 0.99; set_field beneficiary_name="Acme GmbH" 0.95; select_rail rail_id="sepa_inst" why="EUR to Germany — SEPA Instant."; set_field iban="DE89370400440532013000" 0.99.
+
+            User: "pay 200 BRL to consultor@itau.com.br via PIX"
+            You: tool-call set_field amount=200 0.99; set_field currency="BRL" 0.99; set_field beneficiary_country="BR" 0.95; select_rail rail_id="brazil_pix" why="BRL domestic — PIX instant."; set_field pix_key="consultor@itau.com.br" 0.99.
+            """;
+
+    private final RailsRegistry registry;
+    private final Selector selector;
+    private final Lookups lookups;
+    private final Directory directory;
+    private final Validators validators;
+    private final OllamaClient ollama;
+    private final ProseParser proseParser;
+    private final ObjectMapper json = new ObjectMapper();
+
+    public WizardService(RailsRegistry registry, Selector selector, Lookups lookups,
+                         Directory directory, Validators validators,
+                         OllamaClient ollama, ProseParser proseParser) {
+        this.registry = registry;
+        this.selector = selector;
+        this.lookups = lookups;
+        this.directory = directory;
+        this.validators = validators;
+        this.ollama = ollama;
+        this.proseParser = proseParser;
+    }
+
+    public TurnResponse turn(TurnRequest req) {
+        Map<String, Object> form = new HashMap<>(req.form_state() == null ? Map.of() : req.form_state());
+        String railId = (String) form.get("rail_id");
+
+        // Deterministic rail candidates.
+        List<Selector.Candidate> candidates = selector.selectRails(
+                (String) form.get("beneficiary_country"),
+                (String) form.get("currency"),
+                toDouble(form.get("amount")),
+                (String) form.get("urgency"));
+
+        // available_fields whitelist for the LLM.
+        List<String> availableFields;
+        if (railId != null) {
+            availableFields = new ArrayList<>(registry.fieldIdsForRail(railId));
+            availableFields.add("rail_id");
+        } else {
+            // Union of all rail fields so a single turn can pre-fill rail-specific
+            // values (e.g. an IBAN mentioned in the same sentence as Germany).
+            Set<String> union = new TreeSet<>();
+            union.add("rail_id");
+            registry.commonFields().forEach(f -> union.add((String) f.get("id")));
+            registry.rails().values().forEach(rail -> {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> fs = (List<Map<String, Object>>) rail.getOrDefault("fields", List.of());
+                fs.forEach(f -> union.add((String) f.get("id")));
+            });
+            availableFields = new ArrayList<>(union);
+        }
+
+        // Directory enrichment: detect mentioned beneficiaries + accounts,
+        // optionally narrow accounts by current currency.
+        List<Map<String, Object>> beneficiaryMatches = directory.detectBeneficiaryMentions(req.user_text());
+        List<Map<String, Object>> accountMatches = directory.detectAccountMentions(req.user_text());
+        if (form.get("currency") instanceof String cur) {
+            List<Map<String, Object>> filtered = accountMatches.stream()
+                    .filter(a -> ((String) a.get("currency")).equalsIgnoreCase(cur))
+                    .toList();
+            if (!filtered.isEmpty()) accountMatches = filtered;
+        }
+
+        String userContent;
+        try {
+            userContent = "available_fields: " + availableFields + "\n"
+                    + "form_state: " + json.writeValueAsString(form) + "\n"
+                    + "candidates: " + candidates.stream().map(Selector.Candidate::railId).toList() + "\n"
+                    + "matched_beneficiaries: " + json.writeValueAsString(beneficiaryMatches) + "\n"
+                    + "matched_debit_accounts: " + json.writeValueAsString(accountMatches) + "\n\n"
+                    + "User: " + req.user_text();
+        } catch (JsonProcessingException ex) {
+            throw new RuntimeException(ex);
+        }
+
+        JsonNode msg = ollama.chatCompletion(SYSTEM_PROMPT, userContent, TOOLS);
+        String rawMessage = msg.path("content").asText(null);
+
+        List<ToolCall> toolCalls = new ArrayList<>();
+        JsonNode rawCalls = msg.get("tool_calls");
+        if (rawCalls != null && rawCalls.isArray()) {
+            for (JsonNode tc : rawCalls) {
+                String name = tc.path("function").path("name").asText(null);
+                String argsStr = tc.path("function").path("arguments").asText("{}");
+                if (name == null) continue;
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> args = json.readValue(argsStr, Map.class);
+                    toolCalls.add(new ToolCall(name, args));
+                } catch (Exception ex) {
+                    log.warn("Bad tool-call args from model: {}", argsStr);
+                }
+            }
+        }
+
+        // Prose fallback: convert text-form calls into real ToolCalls.
+        if (toolCalls.isEmpty() && rawMessage != null && !rawMessage.isBlank()) {
+            List<ToolCall> recovered = proseParser.parse(rawMessage);
+            if (!recovered.isEmpty()) {
+                log.info("Recovered {} tool calls from prose fallback", recovered.size());
+                toolCalls.addAll(recovered);
+            }
+        }
+
+        // Validate + accept/drop + auto-derive.
+        List<TurnResponse.ValidationResult> validation = new ArrayList<>();
+        Map<String, Object> derived = new LinkedHashMap<>();
+        List<ToolCall> accepted = new ArrayList<>();
+        String effectiveRail = railId;
+
+        for (ToolCall tc : toolCalls) {
+            if ("select_rail".equals(tc.name())) {
+                Object newRail = tc.args().get("rail_id");
+                if (newRail instanceof String s) effectiveRail = s;
+            }
+            if ("set_field".equals(tc.name())) {
+                String fid = (String) tc.args().get("field_id");
+                Object value = tc.args().get("value");
+                Map<String, Object> def = registry.fieldDef(effectiveRail, fid);
+                if (def == null) {
+                    log.info("Dropping set_field for unknown field '{}' on rail '{}'", fid, effectiveRail);
+                    continue;
+                }
+                String validatorName = (String) def.get("validate");
+                if (validatorName != null && value != null && !"".equals(value)) {
+                    Validators.Result vr = validators.validate(validatorName, String.valueOf(value));
+                    validation.add(new TurnResponse.ValidationResult(fid, vr.ok(), vr.error()));
+                    if (!vr.ok()) continue;
+                }
+                if ("iban".equals(fid) && value != null) {
+                    Lookups.Bank bank = lookups.ibanToBank(String.valueOf(value));
+                    if (bank != null) {
+                        derived.put("bic", bank.bic());
+                        derived.put("_bank_name", bank.name());
+                    }
+                }
+            }
+            accepted.add(tc);
+        }
+
+        return new TurnResponse(accepted, candidates, availableFields, validation, derived, rawMessage);
+    }
+
+    private static Double toDouble(Object v) {
+        if (v instanceof Number n) return n.doubleValue();
+        if (v instanceof String s && !s.isBlank()) {
+            try { return Double.parseDouble(s); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+}

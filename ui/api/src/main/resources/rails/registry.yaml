@@ -1,0 +1,247 @@
+# Payment-rail registry for the A2UI wizard.
+#
+# Six rails chosen for VISUAL CONTRAST — when the user changes country/currency,
+# the form should look obviously different. SEPA needs an IBAN, UK FPS needs a
+# sort code + 8-digit account, US ACH adds an account-type radio, India has a
+# two-mode (IFSC/UPI) sub-form, Brazil PIX is a single field, and SWIFT is the
+# "everything cross-border" baseline with full address + charges code.
+#
+# Field shape:
+#   id            — form key (matches the LLM tool-call grammar)
+#   label         — visible label
+#   help          — short hint, also used by the LLM's "explain" tool
+#   type          — text | number | textarea | radio | select
+#   required      — bool
+#   validate      — name of a validator in rails.validators.VALIDATORS
+#   placeholder   — optional input placeholder
+#   max_length    — optional cap
+#   auto_uppercase — bool — uppercase as the user types (IBAN, BIC, IFSC)
+#   auto_derive_from — id of a field whose change triggers a server lookup
+#   depends_on    — {field, value} — only show when another field has this value
+#                   (used for the India IMPS/UPI mode switch)
+#   options       — list of {value, label} for radio/select
+#
+# Common fields (amount/currency/beneficiary_country/beneficiary_name) are
+# rendered for every rail. Rail-specific fields appear underneath, and they
+# morph as the user / model selects a different rail.
+
+common_fields:
+  - id: debit_account_id
+    label: "Debit account (pay from)"
+    help: "Filtered to accounts denominated in the chosen currency."
+    type: account_picker
+    required: true
+
+  - id: amount
+    label: "Amount"
+    type: number
+    required: true
+
+  - id: currency
+    label: "Currency"
+    type: text
+    required: true
+    max_length: 3
+    auto_uppercase: true
+
+  - id: beneficiary_country
+    label: "Beneficiary country"
+    help: "ISO 3166-1 alpha-2 code (e.g. DE, GB, US)."
+    type: text
+    required: true
+    max_length: 2
+    auto_uppercase: true
+
+  - id: beneficiary_name
+    label: "Beneficiary name"
+    help: "Start typing to pull from saved beneficiaries — click to autofill all rail-specific fields."
+    type: beneficiary_typeahead
+    required: true
+    max_length: 70
+
+rails:
+
+  # ── SEPA Instant — euro zone ────────────────────────────────────────── #
+  sepa_inst:
+    display_name: "SEPA Instant Credit Transfer"
+    region: "EU/EEA"
+    countries: [DE, FR, NL, IT, ES, BE, AT, IE, PT, FI, GR, LU, EE, LV, LT, SK, SI, CY, MT, HR]
+    currencies: [EUR]
+    settlement: instant
+    max_amount: 100000
+    summary: "Instant credit transfer in EUR across the SEPA zone. Free, 24/7, capped at €100,000."
+    fields:
+      - id: iban
+        label: "IBAN"
+        help: "International Bank Account Number — country code + 2 check digits + bank/account."
+        type: text
+        required: true
+        validate: iban
+        auto_uppercase: true
+        placeholder: "DE89 3704 0044 0532 0130 00"
+      - id: bic
+        label: "BIC / SWIFT code"
+        help: "Auto-derived from the IBAN when possible."
+        type: text
+        required: false
+        validate: bic
+        auto_uppercase: true
+        auto_derive_from: iban
+      - id: remittance_info
+        label: "Remittance information"
+        help: "Free text shown on the beneficiary's statement (max 140 chars)."
+        type: textarea
+        required: false
+        max_length: 140
+
+  # ── UK Faster Payments ──────────────────────────────────────────────── #
+  uk_fps:
+    display_name: "UK Faster Payments"
+    region: "United Kingdom"
+    countries: [GB]
+    currencies: [GBP]
+    settlement: instant
+    max_amount: 1000000
+    summary: "Instant GBP transfer to a UK bank account. Capped at £1,000,000 per payment."
+    fields:
+      - id: sort_code
+        label: "Sort code"
+        help: "Six digits, format 12-34-56."
+        type: text
+        required: true
+        validate: uk_sort_code
+        placeholder: "12-34-56"
+      - id: account_number
+        label: "Account number"
+        help: "Eight digits."
+        type: text
+        required: true
+        validate: uk_account_number
+        placeholder: "12345678"
+      - id: reference
+        label: "Reference"
+        help: "Up to 18 characters, shown on the beneficiary's statement."
+        type: text
+        required: false
+        max_length: 18
+
+  # ── US ACH ─────────────────────────────────────────────────────────── #
+  us_ach:
+    display_name: "US ACH"
+    region: "United States"
+    countries: [US]
+    currencies: [USD]
+    settlement: next_day
+    summary: "Low-cost USD transfer to a US bank account, settles next business day."
+    fields:
+      - id: routing_number
+        label: "ABA routing number"
+        help: "9 digits identifying the receiving bank."
+        type: text
+        required: true
+        validate: aba_routing
+        placeholder: "021000021"
+      - id: account_number
+        label: "Account number"
+        type: text
+        required: true
+      - id: account_type
+        label: "Account type"
+        type: radio
+        required: true
+        options:
+          - { value: checking, label: "Checking" }
+          - { value: savings,  label: "Savings"  }
+
+  # ── India IMPS / UPI ────────────────────────────────────────────────── #
+  india_imps:
+    display_name: "India IMPS / UPI"
+    region: "India"
+    countries: [IN]
+    currencies: [INR]
+    settlement: instant
+    summary: "Domestic INR transfer — either to a bank account (IFSC + account) or to a UPI VPA."
+    fields:
+      - id: india_mode
+        label: "Mode"
+        type: radio
+        required: true
+        options:
+          - { value: account, label: "Bank account (IFSC)" }
+          - { value: upi,     label: "UPI ID (VPA)"        }
+      - id: ifsc_code
+        label: "IFSC code"
+        help: "11 characters: 4 bank letters + 0 + 6 alphanumeric (e.g. HDFC0001234)."
+        type: text
+        required: true
+        validate: ifsc_code
+        auto_uppercase: true
+        depends_on: { field: india_mode, value: account }
+      - id: account_number
+        label: "Account number"
+        type: text
+        required: true
+        depends_on: { field: india_mode, value: account }
+      - id: upi_vpa
+        label: "UPI ID"
+        help: "Format name@bank — e.g. acme@hdfc or 9876543210@paytm"
+        type: text
+        required: true
+        validate: upi_vpa
+        depends_on: { field: india_mode, value: upi }
+
+  # ── Brazil PIX ─────────────────────────────────────────────────────── #
+  brazil_pix:
+    display_name: "Brazil PIX"
+    region: "Brazil"
+    countries: [BR]
+    currencies: [BRL]
+    settlement: instant
+    summary: "Brazilian instant payment. One field — whatever key the beneficiary registered."
+    fields:
+      - id: pix_key
+        label: "PIX key"
+        help: "Email, phone (+55…), CPF, CNPJ, or a 32-char random EVP UUID."
+        type: text
+        required: true
+        validate: pix_key
+
+  # ── SWIFT MT103 — cross-border catch-all ───────────────────────────── #
+  swift_mt103:
+    display_name: "SWIFT MT103"
+    region: "Cross-border"
+    countries: [WORLDWIDE]
+    currencies: [USD, EUR, GBP, JPY, CHF, AUD, CAD, SGD, HKD, NZD, SEK, NOK, DKK]
+    settlement: 1_3_business_days
+    summary: "Universal cross-border wire. Slower (1–3 days) and costs ~$20–50 in correspondent fees."
+    fields:
+      - id: bic
+        label: "Beneficiary BIC"
+        help: "8 or 11 characters. e.g. DEUTDEFF or DEUTDEFFXXX."
+        type: text
+        required: true
+        validate: bic
+        auto_uppercase: true
+      - id: account_number
+        label: "Beneficiary account or IBAN"
+        type: text
+        required: true
+      - id: beneficiary_address
+        label: "Beneficiary address"
+        help: "Required for cross-border payments (CPMI Travel Rule)."
+        type: textarea
+        required: true
+      - id: charges_code
+        label: "Charges"
+        help: "OUR = sender pays all fees, BEN = beneficiary pays, SHA = shared (most common)."
+        type: radio
+        required: true
+        options:
+          - { value: SHA, label: "Shared (SHA) — recommended" }
+          - { value: OUR, label: "Sender pays all (OUR)"      }
+          - { value: BEN, label: "Beneficiary pays (BEN)"     }
+      - id: reference
+        label: "Reference"
+        type: text
+        required: false
+        max_length: 35

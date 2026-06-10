@@ -1,0 +1,89 @@
+# Runtime configuration — every value is overridable via environment vars
+# in the same shape used by the FastAPI version, so the docker-compose
+# stanza for the api service stays nearly identical.
+
+server:
+  port: 8000
+
+spring:
+  application:
+    name: strata-ui-api
+  # Virtual threads — Java 21's pool-of-many-cheap-threads model. Each
+  # blocked Ollama call no longer ties up a heavyweight platform thread,
+  # so a single instance can hold tens of thousands of in-flight /turn
+  # calls cheaply. The existing blocking RestClient code runs unchanged.
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://${PGHOST:postgres}:${PGPORT:5432}/${PGDATABASE:data_mart}
+    username: ${PGUSER:strata}
+    password: ${PGPASSWORD:strata}
+    hikari:
+      connection-init-sql: SET search_path TO ${PGSCHEMA:data_mart}, public
+
+strata:
+  cors:
+    origins: ${CORS_ORIGINS:http://localhost:4200,http://localhost:8080}
+  ollama:
+    url: ${OLLAMA_URL:http://host.docker.internal:11434}
+    model: ${OLLAMA_MODEL:qwen2.5:7b}
+    timeout-seconds: 60
+  pg:
+    schema: ${PGSCHEMA:data_mart}
+
+# Operational visibility — SREs get /actuator/health (deep checks against
+# Postgres) and /actuator/prometheus (every Spring + Resilience4j metric).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        resilience4j.bulkhead.calls: true
+        resilience4j.circuitbreaker.calls: true
+
+# Resilience4j config for the Ollama path. Decorator order (default):
+# Retry > CircuitBreaker > Bulkhead — so retries wrap the breaker, which
+# wraps the bulkhead. Bulkhead protects the resource (Ollama backend),
+# CircuitBreaker watches its health, Retry handles transient errors.
+resilience4j:
+  bulkhead:
+    instances:
+      ollama:
+        # Cap concurrent inference calls per backend instance. The right
+        # number is roughly (Ollama-instance-throughput-rps × p99-latency).
+        # E.g. 30 rps × 4s tail = 120. Tune via /actuator/metrics.
+        max-concurrent-calls: 40
+        max-wait-duration: 2s
+  retry:
+    instances:
+      ollama:
+        max-attempts: 2
+        wait-duration: 500ms
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - java.net.SocketTimeoutException
+  circuitbreaker:
+    instances:
+      ollama:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 30
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+
+logging:
+  level:
+    com.strata.wizard: INFO
+    io.github.resilience4j: INFO
