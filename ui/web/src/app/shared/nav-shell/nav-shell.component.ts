@@ -91,7 +91,17 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         color: #6B7C8C;
         line-height: 1.6;
       }
-      .content { padding: 28px 36px; max-width: 1280px; }
+      /* Fluid content — fills the full viewport on any screen size.
+         Wizard's internal 1.15fr 1fr split grid then distributes the
+         available width between the form and the assistant panel. */
+      .content {
+        width: 100%;
+        padding: 28px 36px;
+        box-sizing: border-box;
+      }
+      @media (max-width: 900px) {
+        .content { padding: 18px 16px; }
+      }
     `,
   ],
 })
