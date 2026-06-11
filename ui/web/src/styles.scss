@@ -1,68 +1,123 @@
-/* Global styles — Warm Terracotta palette consistent with the strata deck. */
+/* Global styles — FIS Global-inspired design tokens.
+ *
+ * Palette references FIS's public brand presence at fisglobal.com:
+ *   - Deep navy ("Pluto") for primary brand surfaces and headlines.
+ *   - Vibrant FIS green as the accent for CTAs, success, and key UI cues.
+ *   - White surfaces with a very subtle cool-gray page tint.
+ *   - Geometric sans-serif typography (Inter / system-ui).
+ *
+ * All component styles consume these via `var(--token)` — change them
+ * here and the whole app re-skins.
+ */
+
+/* Inter is what most modern fintech UIs reach for when FIS Pluto Sans
+ * isn't licensed. We import via fonts.bunny.net (privacy-respecting,
+ * Google-Fonts-compatible). Falls back to system-ui smoothly. */
+@import url("https://fonts.bunny.net/css?family=inter:400,500,600,700|jetbrains-mono:400,500&display=swap");
+
 :root {
-  --bg:        #FAF7F2;
-  --bg-card:   #FFFFFF;
-  --bg-card-2: #F2EBDC;
-  --bg-dark:   #2C2520;
-  --primary:   #B85042;
-  --primary-dim: #d97765;
-  --secondary: #8B6F47;
-  --accent:    #5A8074;
-  --text:      #1F1A17;
-  --text-body: #3a3a3a;
-  --text-muted:#6B6259;
-  --rule:      #D4C9BD;
-  --error:     #c0392b;
-  --success:   #5A8074;
+  /* ── Backgrounds ─────────────────────────────────────────────────── */
+  --bg:          #F4F6F8;   /* page tint */
+  --bg-card:     #FFFFFF;
+  --bg-card-2:   #F8F9FB;   /* alt card / subtle hover */
+  --bg-dark:     #051C2C;   /* deep navy — sidebar, hero */
+  --bg-dark-2:   #0A2A40;   /* slightly raised dark surface */
+
+  /* ── Brand ───────────────────────────────────────────────────────── */
+  --primary:        #051C2C;  /* deep navy */
+  --primary-hover:  #0B2940;
+  --primary-soft:   #E4EAF0;  /* tinted backgrounds for navy */
+
+  --accent:         #00B45C;  /* FIS green */
+  --accent-hover:   #009C50;
+  --accent-soft:    #E6F8EE;  /* tinted backgrounds for green */
+
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --text:        #0B1F33;
+  --text-body:   #25303D;
+  --text-muted:  #5A6B7B;
+  --text-inverse:#FFFFFF;
+  --text-on-dark:#C9D2DB;     /* secondary text on dark surfaces */
+
+  /* ── Lines / states ──────────────────────────────────────────────── */
+  --border:      #DCE2E8;
+  --border-strong:#B5C0CB;
+  --rule:        #DCE2E8;     /* alias for older callsites */
+
+  --error:       #D02E1D;
+  --warning:     #E48A04;
+  --success:     #00A85A;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Calibri, Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
   background: var(--bg);
   color: var(--text);
 }
 
-a { color: var(--primary); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+h1, h2, h3, h4 {
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
 
 button {
   font-family: inherit;
   font-size: 14px;
+  font-weight: 600;
   padding: 8px 16px;
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  &:hover { background: var(--primary-dim); }
-  &:disabled { background: var(--rule); cursor: not-allowed; }
+  transition: background 120ms ease;
+  &:hover { background: var(--primary-hover); }
+  &:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
   &.ghost {
     background: transparent;
     color: var(--text-body);
-    border: 1px solid var(--rule);
-    &:hover { background: var(--bg-card-2); }
+    border: 1px solid var(--border);
+    font-weight: 500;
+    &:hover { background: var(--bg-card-2); border-color: var(--border-strong); }
+  }
+  &.accent {
+    background: var(--accent);
+    &:hover { background: var(--accent-hover); }
   }
 }
 
-input, select, textarea {
+/* Text-like form controls — radios + checkboxes are EXCLUDED so they keep
+   their native intrinsic 13×13 px sizing instead of being stretched to 100%
+   width, which would push their label text out of the surrounding pill.
+   File and submit inputs are also excluded so their default UI survives. */
+input:not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="submit"]):not([type="button"]),
+select,
+textarea {
   font-family: inherit;
   font-size: 14px;
   padding: 8px 10px;
   background: var(--bg-card);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text);
   width: 100%;
-  &:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  &:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 }
 
 .card {
   background: var(--bg-card);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 20px;
 }
@@ -71,9 +126,10 @@ input, select, textarea {
 .error { color: var(--error); }
 .success { color: var(--success); }
 .kbd {
-  font-family: 'Menlo', 'Consolas', monospace;
+  font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
   font-size: 13px;
   background: var(--bg-card-2);
+  border: 1px solid var(--border);
   padding: 2px 6px;
   border-radius: 3px;
 }

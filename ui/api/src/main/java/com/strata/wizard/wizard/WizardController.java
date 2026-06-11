@@ -1,10 +1,12 @@
 package com.strata.wizard.wizard;
 
 import com.strata.wizard.rails.*;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.*;
 
 /**
@@ -20,14 +22,16 @@ public class WizardController {
     private final Directory directory;
     private final Lookups lookups;
     private final Selector selector;
+    private final RecurringDetector detector;
     private final WizardService service;
 
     public WizardController(RailsRegistry registry, Directory directory, Lookups lookups,
-                            Selector selector, WizardService service) {
+                            Selector selector, RecurringDetector detector, WizardService service) {
         this.registry = registry;
         this.directory = directory;
         this.lookups = lookups;
         this.selector = selector;
+        this.detector = detector;
         this.service = service;
     }
 
@@ -77,5 +81,18 @@ public class WizardController {
     @PostMapping("/turn")
     public TurnResponse turn(@RequestBody TurnRequest req) {
         return service.turn(req);
+    }
+
+    /**
+     * Recurring-payment suggestions ranked by confidence, plus quick-reuse
+     * templates for beneficiaries without a strong cadence. The asOf
+     * parameter lets demos pin "today" to a fixed date for reproducibility.
+     */
+    @GetMapping("/suggestions")
+    public RecurringDetector.Result suggestions(
+            @RequestParam(value = "as_of", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return detector.detect(Directory.BENEFICIARIES,
+                asOf == null ? LocalDate.now() : asOf);
     }
 }

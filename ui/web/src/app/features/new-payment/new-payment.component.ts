@@ -177,7 +177,7 @@ const COUNTRIES: Record<string, string> = {
   `,
   styles: [
     `
-      h1 { font-family: Georgia, serif; font-size: 26px; margin: 0 0 6px; }
+      h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
       .grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -189,7 +189,7 @@ const COUNTRIES: Record<string, string> = {
       .field { display: flex; flex-direction: column; gap: 6px; }
       label { font-size: 12px; color: var(--text-muted); }
       .actions { display: flex; gap: 12px; margin-top: 6px; }
-      .success-card { border-color: var(--accent); background: #ecf3ef; }
+      .success-card { border-color: var(--accent); background: var(--accent-soft); }
     `,
   ],
 })

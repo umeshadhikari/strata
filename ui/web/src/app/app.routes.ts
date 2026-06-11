@@ -44,5 +44,13 @@ export const routes: Routes = [
       ),
     title: 'strata — New payment',
   },
+  {
+    path: 'wizard',
+    loadComponent: () =>
+      import('./features/wizard/payment-wizard.component').then(
+        (m) => m.PaymentWizardComponent,
+      ),
+    title: 'strata — AI payment wizard',
+  },
   { path: '**', redirectTo: 'tables' },
 ];

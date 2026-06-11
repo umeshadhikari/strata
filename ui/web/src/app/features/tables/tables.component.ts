@@ -50,7 +50,7 @@ import { TableSummary } from '../../core/models';
   `,
   styles: [
     `
-      h1 { font-family: Georgia, serif; font-size: 26px; margin: 0 0 6px; }
+      h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
       .table-card {
         background: var(--bg-card);
         border: 1px solid var(--rule);
@@ -63,7 +63,7 @@ import { TableSummary } from '../../core/models';
       th { background: var(--bg-card-2); font-weight: 600; font-size: 12.5px; color: var(--text-muted); }
       tbody tr { cursor: pointer; }
       tbody tr:hover { background: var(--bg-card-2); }
-      .mono { font-family: 'Menlo', 'Consolas', monospace; font-size: 13px; }
+      .mono { font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; font-size: 13px; }
       .num { text-align: right; font-variant-numeric: tabular-nums; }
       .badge {
         display: inline-block;
@@ -73,8 +73,8 @@ import { TableSummary } from '../../core/models';
         font-weight: 600;
         background: var(--bg-card-2);
         color: var(--text-body);
-        &.fact { background: #f9e7c5; color: #8a5d0d; }
-        &.dimension { background: #d8e6dd; color: #2f5a4d; }
+        &.fact { background: var(--accent-soft); color: #0E6B3A; }
+        &.dimension { background: var(--primary-soft); color: var(--primary); }
       }
     `,
   ],

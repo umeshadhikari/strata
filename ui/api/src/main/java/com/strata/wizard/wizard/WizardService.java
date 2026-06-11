@@ -86,9 +86,11 @@ public class WizardService {
             RULES
             1. For every fact the user stated, emit set_field. Use the exact field_id from available_fields. Confidence 0.95+ when explicit, 0.6–0.8 when inferred.
             2. If no rail is selected AND candidates is non-empty, emit select_rail with the first candidate.
-            3. After a rail is selected, only set fields that exist on that rail.
-            4. If something is missing or ambiguous, emit ask.
-            5. Country codes ISO 3166-1 alpha-2 (DE, GB, US, IN, BR). Currency codes ISO 4217 uppercase. Amounts as plain numbers.
+            3. `rail_id` MUST be one of the strings in `candidates`. NEVER invent rail names like "uk_to_eu" or "sepa". The ONLY valid values are: sepa_inst, uk_fps, us_ach, india_imps, brazil_pix, swift_mt103. CRITICAL: `uk_fps` is for UK→UK GBP only (domestic). A GBP payment from UK to anywhere else is cross-border and MUST use `swift_mt103`. Same for `us_ach` (US→US USD only) and `india_imps` (India domestic only).
+            4. After a rail is selected, only set fields that exist on that rail.
+            5. If something is missing or ambiguous, emit ask.
+            6. Country codes ISO 3166-1 alpha-2 (DE, GB, US, IN, BR). Currency codes ISO 4217 uppercase. Amounts as plain numbers.
+            7. CURRENCY INFERENCE: when the user names a country but not a currency, infer the destination's local currency. "to Spain" → EUR (not GBP, even if the source is the UK). "to Germany" → EUR. "to India" → INR. "to Brazil" → BRL. Only override this when the user explicitly states the currency.
 
             EXAMPLES
             User: "send 5000 EUR to Acme GmbH in Germany IBAN DE89370400440532013000"
@@ -96,6 +98,9 @@ public class WizardService {
 
             User: "pay 200 BRL to consultor@itau.com.br via PIX"
             You: tool-call set_field amount=200 0.99; set_field currency="BRL" 0.99; set_field beneficiary_country="BR" 0.95; select_rail rail_id="brazil_pix" why="BRL domestic — PIX instant."; set_field pix_key="consultor@itau.com.br" 0.99.
+
+            User: "send a supplier payment from uk to spain"
+            You: tool-call set_field beneficiary_country="ES" 0.95; set_field currency="GBP" 0.7; select_rail rail_id="swift_mt103" why="GBP from UK to Spain is cross-border — uk_fps is UK-domestic only."; ask field_id="amount" prompt="How much?".
             """;
 
     private final RailsRegistry registry;
@@ -122,6 +127,11 @@ public class WizardService {
     public TurnResponse turn(TurnRequest req) {
         Map<String, Object> form = new HashMap<>(req.form_state() == null ? Map.of() : req.form_state());
         String railId = (String) form.get("rail_id");
+        // If the user picked a rail directly via the "Pick a rail" entry screen,
+        // form_state.rail_locked is true. We honour that pick — no select_rail
+        // tool calls from the LLM, no deterministic fallback. The LLM is then
+        // restricted to set_field/ask/explain on this rail's fields only.
+        boolean railLocked = Boolean.TRUE.equals(form.get("rail_locked"));
 
         // Deterministic rail candidates.
         List<Selector.Candidate> candidates = selector.selectRails(
@@ -164,7 +174,7 @@ public class WizardService {
         try {
             userContent = "available_fields: " + availableFields + "\n"
                     + "form_state: " + json.writeValueAsString(form) + "\n"
-                    + "candidates: " + candidates.stream().map(Selector.Candidate::railId).toList() + "\n"
+                    + "candidates: " + candidates.stream().map(Selector.Candidate::rail_id).toList() + "\n"
                     + "matched_beneficiaries: " + json.writeValueAsString(beneficiaryMatches) + "\n"
                     + "matched_debit_accounts: " + json.writeValueAsString(accountMatches) + "\n\n"
                     + "User: " + req.user_text();
@@ -206,11 +216,41 @@ public class WizardService {
         Map<String, Object> derived = new LinkedHashMap<>();
         List<ToolCall> accepted = new ArrayList<>();
         String effectiveRail = railId;
+        boolean railWasPicked = railId != null;
+        Set<String> candidateIds = candidates.stream()
+                .map(Selector.Candidate::rail_id)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
 
         for (ToolCall tc : toolCalls) {
             if ("select_rail".equals(tc.name())) {
+                if (railLocked) {
+                    log.info("Dropping select_rail — rail '{}' was locked by user direct-pick.", railId);
+                    continue;
+                }
                 Object newRail = tc.args().get("rail_id");
-                if (newRail instanceof String s) effectiveRail = s;
+                String s = (newRail instanceof String str) ? str : null;
+                // Two layers of defense:
+                //   (a) rail must exist in the registry (catches "uk_to_eu"-style fabrications)
+                //   (b) rail must be in the deterministic candidate list (catches plausible
+                //       but wrong picks like uk_fps for a UK→Spain GBP payment, which is
+                //       cross-border and only swift_mt103 is valid)
+                if (s == null || registry.getRail(s) == null) {
+                    log.warn("Dropping select_rail for unknown rail '{}'. Known: {}",
+                            newRail, registry.rails().keySet());
+                    validation.add(new TurnResponse.ValidationResult(
+                            "rail_id", false,
+                            "Model suggested rail '" + newRail + "' which is not in the registry — falling back to a deterministic candidate."));
+                    continue;
+                }
+                if (!candidateIds.isEmpty() && !candidateIds.contains(s)) {
+                    log.warn("Dropping select_rail '{}' — not in candidates {}", s, candidateIds);
+                    validation.add(new TurnResponse.ValidationResult(
+                            "rail_id", false,
+                            "Model picked '" + s + "' but the deterministic selector ruled it out for this country/currency. Available: " + candidateIds + "."));
+                    continue;
+                }
+                effectiveRail = s;
+                railWasPicked = true;
             }
             if ("set_field".equals(tc.name())) {
                 String fid = (String) tc.args().get("field_id");
@@ -235,6 +275,19 @@ public class WizardService {
                 }
             }
             accepted.add(tc);
+        }
+
+        // Deterministic fallback: if the model didn't pick a valid rail AND we
+        // have a candidate from the selector, synthesise the select_rail so the
+        // form always morphs to *something* sensible. The "why" makes it clear
+        // to the user that this came from the rule engine, not the LLM.
+        // Skipped when the user has locked the rail.
+        if (!railWasPicked && !railLocked && !candidates.isEmpty()) {
+            Selector.Candidate top = candidates.get(0);
+            accepted.add(new ToolCall("select_rail", Map.of(
+                    "rail_id", top.rail_id(),
+                    "why", "Auto-selected from deterministic candidates: " + top.why()
+            )));
         }
 
         return new TurnResponse(accepted, candidates, availableFields, validation, derived, rawMessage);

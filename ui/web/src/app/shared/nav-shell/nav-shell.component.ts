@@ -25,6 +25,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
           <a routerLink="/new-payment" routerLinkActive="active">
             <span class="icon">＋</span> New payment
           </a>
+          <a routerLink="/wizard" routerLinkActive="active">
+            <span class="icon">✦</span> AI payment wizard
+          </a>
         </nav>
         <div class="foot">
           <div class="muted">Source: data_mart</div>
@@ -38,40 +41,56 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
   `,
   styles: [
     `
-      .shell { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
+      .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
       .sidebar {
         background: var(--bg-dark);
-        color: #d4c9bd;
-        padding: 22px 18px;
+        color: var(--text-on-dark);
+        padding: 24px 18px;
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 20px;
       }
       .brand { display: flex; gap: 12px; align-items: center; }
       .brand-mark {
         width: 36px; height: 36px; border-radius: 6px;
-        background: var(--primary); color: #fff;
-        font-weight: 700; font-size: 22px; font-family: Georgia, serif;
+        background: var(--accent); color: #fff;
+        font-weight: 700; font-size: 20px;
+        letter-spacing: -0.02em;
         display: flex; align-items: center; justify-content: center;
       }
-      .brand-name { font-weight: 700; font-size: 16px; color: #f5efe6; font-family: Georgia, serif; }
-      .brand-sub  { font-size: 11px; color: #a89678; }
-      nav { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+      .brand-name {
+        font-weight: 700; font-size: 16px;
+        letter-spacing: -0.01em;
+        color: #fff;
+      }
+      .brand-sub  {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #8FA0B0;
+        margin-top: 2px;
+      }
+      nav { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; }
       nav a {
-        color: #c9bda9;
-        padding: 8px 10px;
+        color: var(--text-on-dark);
+        padding: 9px 12px;
         border-radius: 4px;
         display: flex; align-items: center; gap: 10px;
         font-size: 13.5px;
+        font-weight: 500;
+        transition: background 120ms ease, color 120ms ease;
       }
-      nav a:hover { background: rgba(255,255,255,0.04); text-decoration: none; }
+      nav a:hover { background: rgba(255,255,255,0.06); color: #fff; text-decoration: none; }
       nav a.active {
-        background: var(--primary);
+        background: var(--accent);
         color: #fff;
       }
       .icon { width: 16px; text-align: center; opacity: 0.85; }
       .foot { margin-top: auto; font-size: 11px; }
-      .foot .muted { color: #80715f; line-height: 1.6; }
+      .foot .muted {
+        color: #6B7C8C;
+        line-height: 1.6;
+      }
       .content { padding: 28px 36px; max-width: 1280px; }
     `,
   ],

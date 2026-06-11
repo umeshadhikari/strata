@@ -111,7 +111,8 @@ services:
     command: ["/app/superset_init.sh"]
     networks: [strata]
 
-  # FastAPI backend for the UI module.
+  # Spring Boot backend for the UI module.
+  # Tables, payments, and the A2UI payment wizard.
   api:
     build:
       context: ../ui/api
@@ -139,6 +140,16 @@ services:
       SUPERSET_USER: admin
       SUPERSET_PASSWORD: admin
       CORS_ORIGINS: "http://localhost:${UI_HOST_PORT:-4200}"
+      # AI payment wizard — Qwen via Ollama on the host. Override
+      # OLLAMA_URL if Ollama is somewhere else; on Linux you may need
+      #   OLLAMA_URL=http://172.17.0.1:11434
+      # (the docker0 bridge IP) instead of host.docker.internal.
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
+    # `extra_hosts` makes host.docker.internal resolve on Linux too
+    # (it's only auto-defined on Docker Desktop for Mac/Windows).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     healthcheck:

@@ -24,6 +24,18 @@
 # Common fields (amount/currency/beneficiary_country/beneficiary_name) are
 # rendered for every rail. Rail-specific fields appear underneath, and they
 # morph as the user / model selects a different rail.
+#
+# Each rail also has a `schedule` and `cost` block. The scheduler reads:
+#   operates_24x7   — bool. If true, the rail is always available.
+#   timezone        — IANA tz. Determines when "today" rolls over and which
+#                     LocalTime cutoffs apply.
+#   weekend_open    — bool. If false, Saturday and Sunday are non-operating.
+#   cutoff_time     — LocalTime (HH:mm). Last instant for same-window submission.
+#                     For 24x7 instant rails this is null (irrelevant).
+#   settlement_offset_days — int. 0 = same day; 1 = T+1 next business day; 2 = T+2.
+#                            Used together with the cutoff to compute when funds land.
+# Cost is a tuple of fixed_fee + percentage_bps; SWIFT also has a
+# correspondent_fee_range to express the corridor variability.
 
 common_fields:
   - id: debit_account_id
@@ -68,8 +80,22 @@ rails:
     countries: [DE, FR, NL, IT, ES, BE, AT, IE, PT, FI, GR, LU, EE, LV, LT, SK, SI, CY, MT, HR]
     currencies: [EUR]
     settlement: instant
+    speed_text: "Instant (~10s)"
+    cost_text: "Free"
     max_amount: 100000
     summary: "Instant credit transfer in EUR across the SEPA zone. Free, 24/7, capped at €100,000."
+    schedule:
+      operates_24x7: true
+      timezone: "Europe/Brussels"
+      weekend_open: true
+      cutoff_time: null
+      settlement_offset_days: 0
+    cost:
+      currency: EUR
+      fixed_fee: 0.00
+      percentage_bps: 0
+      fx_spread_bps: 0
+      correspondent_fee_range: null
     fields:
       - id: iban
         label: "IBAN"
@@ -101,8 +127,22 @@ rails:
     countries: [GB]
     currencies: [GBP]
     settlement: instant
+    speed_text: "Instant (seconds)"
+    cost_text: "Free"
     max_amount: 1000000
     summary: "Instant GBP transfer to a UK bank account. Capped at £1,000,000 per payment."
+    schedule:
+      operates_24x7: true
+      timezone: "Europe/London"
+      weekend_open: true
+      cutoff_time: null
+      settlement_offset_days: 0
+    cost:
+      currency: GBP
+      fixed_fee: 0.00
+      percentage_bps: 0
+      fx_spread_bps: 0
+      correspondent_fee_range: null
     fields:
       - id: sort_code
         label: "Sort code"
@@ -132,7 +172,22 @@ rails:
     countries: [US]
     currencies: [USD]
     settlement: next_day
+    speed_text: "Next business day"
+    cost_text: "~$0.25 per payment"
     summary: "Low-cost USD transfer to a US bank account, settles next business day."
+    # Standard NACHA file cutoff is ~16:30 ET; weekend submissions wait until Monday.
+    schedule:
+      operates_24x7: false
+      timezone: "America/New_York"
+      weekend_open: false
+      cutoff_time: "16:30"
+      settlement_offset_days: 1
+    cost:
+      currency: USD
+      fixed_fee: 0.25
+      percentage_bps: 0
+      fx_spread_bps: 0
+      correspondent_fee_range: null
     fields:
       - id: routing_number
         label: "ABA routing number"
@@ -160,7 +215,23 @@ rails:
     countries: [IN]
     currencies: [INR]
     settlement: instant
-    summary: "Domestic INR transfer — either to a bank account (IFSC + account) or to a UPI VPA."
+    speed_text: "Instant (24/7)"
+    cost_text: "Free for UPI, ₹2.50–25 for IMPS"
+    # IMPS per-transaction cap is ₹5,00,000 (₹500k). Larger amounts must use NEFT/RTGS
+    # (not modelled in this demo) or SWIFT for cross-border.
+    max_amount: 500000
+    schedule:
+      operates_24x7: true
+      timezone: "Asia/Kolkata"
+      weekend_open: true
+      cutoff_time: null
+      settlement_offset_days: 0
+    cost:
+      currency: INR
+      fixed_fee: 5.00
+      percentage_bps: 0
+      fx_spread_bps: 0
+      correspondent_fee_range: null
     fields:
       - id: india_mode
         label: "Mode"
@@ -197,7 +268,24 @@ rails:
     countries: [BR]
     currencies: [BRL]
     settlement: instant
+    speed_text: "Instant (24/7)"
+    cost_text: "Free"
     summary: "Brazilian instant payment. One field — whatever key the beneficiary registered."
+    # PIX is technically uncapped at the rail level, but most banks apply ~R$1M
+    # business-hours / ~R$10k overnight limits. Use 1,000,000 as a sane upper bound.
+    max_amount: 1000000
+    schedule:
+      operates_24x7: true
+      timezone: "America/Sao_Paulo"
+      weekend_open: true
+      cutoff_time: null
+      settlement_offset_days: 0
+    cost:
+      currency: BRL
+      fixed_fee: 0.00
+      percentage_bps: 0
+      fx_spread_bps: 0
+      correspondent_fee_range: null
     fields:
       - id: pix_key
         label: "PIX key"
@@ -213,7 +301,23 @@ rails:
     countries: [WORLDWIDE]
     currencies: [USD, EUR, GBP, JPY, CHF, AUD, CAD, SGD, HKD, NZD, SEK, NOK, DKK]
     settlement: 1_3_business_days
+    speed_text: "1–3 business days"
+    cost_text: "~$20–50 + correspondent bank fees"
     summary: "Universal cross-border wire. Slower (1–3 days) and costs ~$20–50 in correspondent fees."
+    # Most correspondent banks accept MT103s 24/5 with a same-day cutoff around 16:00 GMT.
+    # Weekends settle Monday. SWIFT itself is always up; the constraint is the corridor.
+    schedule:
+      operates_24x7: false
+      timezone: "Europe/London"
+      weekend_open: false
+      cutoff_time: "16:00"
+      settlement_offset_days: 2
+    cost:
+      currency: USD
+      fixed_fee: 25.00
+      percentage_bps: 0
+      fx_spread_bps: 50           # 0.5 % typical bank FX margin
+      correspondent_fee_range: [15.00, 50.00]
     fields:
       - id: bic
         label: "Beneficiary BIC"

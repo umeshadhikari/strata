@@ -35,13 +35,16 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
         <h1 class="page-title">Dashboards</h1>
         <p class="page-sub">
           Superset's native builder + dashboard list, embedded. Use the
-          buttons below to browse, create, or edit. Drafts you publish
-          show up in
-          <button class="link-btn" (click)="openDashboardsList()">All dashboards</button>.
+          buttons below to browse, create, or edit. After
+          <strong>delete / publish / rename</strong> inside the iframe,
+          hit <strong>↻ Reload</strong> — Superset's home page doesn't
+          refresh its cards on its own.
         </p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" (click)="reloadIframe()">↻ Reload</button>
+        <button class="btn-reload" (click)="reloadIframe()" title="Refresh the embedded view (use after delete / publish / rename)">
+          ↻ Reload
+        </button>
         <a class="open-out" [href]="welcomeUrl()" target="_blank" rel="noopener">
           Open in new tab ↗
         </a>
@@ -98,20 +101,23 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
       }
       .page-title {
         margin: 0 0 4px;
-        font-family: Georgia, serif;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
       }
       .page-sub {
         color: var(--text-muted);
         margin: 0;
         max-width: 720px;
+        line-height: 1.5;
       }
-      .page-sub a { color: var(--primary); text-decoration: underline; }
+      .page-sub a { color: var(--accent); text-decoration: underline; }
       .link-btn {
         background: none; border: none; padding: 0;
-        color: var(--primary); text-decoration: underline; cursor: pointer;
+        color: var(--accent); text-decoration: underline; cursor: pointer;
         font: inherit;
       }
-      .page-sub strong { color: var(--text); }
+      .page-sub strong { color: var(--text); font-weight: 600; }
 
       .header-actions { display: flex; gap: 8px; align-items: center; }
 
@@ -121,47 +127,52 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
         align-items: center;
         margin-bottom: 12px;
         padding: 10px 12px;
-        background: #fbf6ee;
-        border: 1px solid #ebe1ce;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
         border-radius: 6px;
       }
       .qa-btn {
         padding: 6px 12px;
         border-radius: 4px;
         font-size: 13px;
+        font-weight: 500;
         cursor: pointer;
         border: 1px solid var(--border);
-        background: #fff;
+        background: var(--bg-card);
         color: var(--text);
+        transition: border-color 120ms ease, color 120ms ease;
       }
       .qa-btn:hover { border-color: var(--primary); color: var(--primary); }
       .qa-btn.create {
-        background: var(--primary);
+        background: var(--accent);
         color: #fff;
-        border-color: var(--primary);
+        border-color: var(--accent);
         font-weight: 600;
       }
-      .qa-btn.create:hover { background: #a04525; color: #fff; }
+      .qa-btn.create:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
       .qa-spacer { flex: 1; }
-      .btn-secondary {
-        background: #fff;
-        border: 1px solid var(--border);
-        color: var(--text);
-        padding: 6px 12px;
+      .btn-reload {
+        background: var(--primary);
+        border: 1px solid var(--primary);
+        color: #fff;
+        padding: 7px 14px;
         border-radius: 4px;
         font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
+        transition: background 120ms ease;
       }
-      .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+      .btn-reload:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
       .open-out {
         font-size: 13px;
         color: var(--primary);
         white-space: nowrap;
         padding: 6px 10px;
-        border: 1px solid var(--primary);
+        border: 1px solid var(--border-strong);
         border-radius: 4px;
+        font-weight: 500;
       }
-      .open-out:hover { background: var(--primary); color: #fff; text-decoration: none; }
+      .open-out:hover { background: var(--primary); border-color: var(--primary); color: #fff; text-decoration: none; }
 
       .frame {
         position: relative;
@@ -183,7 +194,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
         position: absolute;
         top: 0;
         left: 0;
-        width: 180px;
+        width: 140px;
         height: 56px;
         background: #fff;
         z-index: 5;
@@ -193,17 +204,20 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
       .note {
         margin-top: 14px;
         padding: 10px 14px;
-        background: #fbf6ee;
-        border: 1px solid #ebe1ce;
+        background: var(--accent-soft);
+        border: 1px solid #B8E5CC;
         border-radius: 6px;
         font-size: 12.5px;
-        color: #5a4f3e;
+        color: #1F4030;
+        line-height: 1.55;
       }
       .note code {
-        background: #f1e9d8;
+        background: #FFFFFF;
+        border: 1px solid #C5E5D2;
         padding: 1px 5px;
         border-radius: 3px;
         font-size: 12px;
+        font-family: 'JetBrains Mono', 'Menlo', monospace;
       }
     `,
   ],
