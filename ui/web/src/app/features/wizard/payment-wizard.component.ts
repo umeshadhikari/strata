@@ -499,10 +499,37 @@ interface SubmitConfirmation {
           </header>
 
           <div #log class="chat-log">
-            @if (chat().length === 0) {
-              @if (recurringSuggestions().length > 0) {
-                <div class="empty">
+            <!-- Persistent "Show due payments" toggle — visible whenever
+                 suggestions/templates exist but the panel is collapsed. Click
+                 to re-expand. Hidden when there are no suggestions at all. -->
+            @if (!showSuggestions() && (recurringSuggestions().length > 0 || reusableTemplates().length > 0)) {
+              <button
+                type="button"
+                class="suggestions-toggle"
+                (click)="setShowSuggestions(true)"
+                title="Show recent recurring payments + templates"
+              >
+                <span class="st-icon">↺</span>
+                <span class="st-text">
+                  Show due payments
+                  @if (recurringSuggestions().length > 0) {
+                    <span class="st-count">{{ recurringSuggestions().length }}</span>
+                  }
+                </span>
+              </button>
+            }
+
+            @if (showSuggestions() && recurringSuggestions().length > 0) {
+              <div class="empty">
+                <div class="empty-head">
                   <div class="empty-title">Due for you</div>
+                  <button
+                    type="button"
+                    class="suggestions-hide"
+                    (click)="setShowSuggestions(false)"
+                    title="Hide this panel"
+                  >×</button>
+                </div>
                   @for (s of recurringSuggestions(); track s.beneficiary_id) {
                     <button
                       type="button"
@@ -523,40 +550,47 @@ interface SubmitConfirmation {
                   }
                 </div>
               }
-              @if (reusableTemplates().length > 0) {
-                <div class="empty">
+            @if (showSuggestions() && reusableTemplates().length > 0) {
+              <div class="empty">
+                <div class="empty-head">
                   <div class="empty-title">Templates · quick reuse</div>
-                  @for (t of reusableTemplates(); track t.beneficiary_id) {
-                    <button
-                      type="button"
-                      class="template-chip"
-                      (click)="applyTemplate(t)"
-                    >
-                      <div class="tpl-head">
-                        <span class="tpl-name">{{ t.beneficiary }}</span>
-                        <span class="tpl-rail">{{ railName(t.rail_id) }}</span>
-                      </div>
-                      <div class="tpl-meta">
-                        {{ t.country }} · last paid {{ t.last_paid }} · {{ t.payment_count }} prior
-                      </div>
-                    </button>
-                  }
+                  <button
+                    type="button"
+                    class="suggestions-hide"
+                    (click)="setShowSuggestions(false)"
+                    title="Hide this panel"
+                  >×</button>
                 </div>
-              }
-              @if (recurringSuggestions().length === 0 && reusableTemplates().length === 0) {
-                <div class="empty">
-                  <div class="empty-title">Try one of these</div>
-                  @for (preset of demoPresets; track preset) {
-                    <button
-                      type="button"
-                      class="preset-chip"
-                      (click)="loadPreset(preset)"
-                    >
-                      {{ preset }}
-                    </button>
-                  }
-                </div>
-              }
+                @for (t of reusableTemplates(); track t.beneficiary_id) {
+                  <button
+                    type="button"
+                    class="template-chip"
+                    (click)="applyTemplate(t)"
+                  >
+                    <div class="tpl-head">
+                      <span class="tpl-name">{{ t.beneficiary }}</span>
+                      <span class="tpl-rail">{{ railName(t.rail_id) }}</span>
+                    </div>
+                    <div class="tpl-meta">
+                      {{ t.country }} · last paid {{ t.last_paid }} · {{ t.payment_count }} prior
+                    </div>
+                  </button>
+                }
+              </div>
+            }
+            @if (chat().length === 0 && recurringSuggestions().length === 0 && reusableTemplates().length === 0) {
+              <div class="empty">
+                <div class="empty-title">Try one of these</div>
+                @for (preset of demoPresets; track preset) {
+                  <button
+                    type="button"
+                    class="preset-chip"
+                    (click)="loadPreset(preset)"
+                  >
+                    {{ preset }}
+                  </button>
+                }
+              </div>
             }
             @for (entry of chat(); track $index) {
               @switch (entry.kind) {
@@ -1228,6 +1262,64 @@ interface SubmitConfirmation {
         color: var(--text-muted);
         margin-bottom: 4px;
       }
+      /* Header strip for the suggestions/templates panels — lets the user
+         dismiss the panel with a small × button. */
+      .empty-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+      .empty-head .empty-title { margin-bottom: 0; }
+      .suggestions-hide {
+        background: none;
+        border: none;
+        font-size: 16px;
+        line-height: 1;
+        color: var(--text-muted, #5f6b7a);
+        cursor: pointer;
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .suggestions-hide:hover {
+        background: var(--bg-card-2, #f1f3f5);
+        color: var(--text-body, #1f2933);
+      }
+      /* Persistent "Show due payments" pill — appears at top of chat-log
+         whenever suggestions exist but the panel is hidden. */
+      .suggestions-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        align-self: flex-start;
+        margin: 0 0 10px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-family: inherit;
+        font-weight: 500;
+        color: var(--accent, #0a8a3f);
+        background: var(--accent-soft, #def5e4);
+        border: 1px solid var(--accent, #0a8a3f);
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      .suggestions-toggle:hover { background: #c8eed1; }
+      .suggestions-toggle .st-icon { font-size: 14px; }
+      .suggestions-toggle .st-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 4px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: #fff;
+        background: var(--accent, #0a8a3f);
+        border-radius: 9999px;
+      }
       .preset-chip {
         text-align: left;
         background: var(--bg-card);
@@ -1671,8 +1763,11 @@ export class PaymentWizardComponent implements OnInit {
   private api = inject(ApiService);
   private zone = inject(NgZone);
 
-  /** Silence threshold after which dictation auto-stops + auto-sends. */
-  private readonly SILENCE_MS = 1400;
+  /** Silence threshold after which dictation auto-stops + auto-sends.
+   *  Generous because users naturally pause to think mid-sentence. The
+   *  timer also resets on every speechstart/result event, so this is the
+   *  amount of TRUE silence (no audio at all) before we send. */
+  private readonly SILENCE_MS = 3000;
 
   // ── Registry & rail state ─────────────────────────────────────── //
   registry = signal<RailsRegistry | null>(null);
@@ -1719,6 +1814,11 @@ export class PaymentWizardComponent implements OnInit {
 
   // Recurring suggestions (loaded once on init).
   recurringSuggestions = signal<RecurringSuggestion[]>([]);
+  /** Visibility of the suggestions/templates panel — independent of chat length
+   *  so the panel survives system notes (e.g. "Switched to llama3.1:8b"). A
+   *  persistent "↺ Show due payments" pill brings it back when hidden. */
+  showSuggestions = signal<boolean>(true);
+  setShowSuggestions(v: boolean): void { this.showSuggestions.set(v); }
   reusableTemplates = signal<ReusableTemplate[]>([]);
 
   // Cross-rail comparison popover.
@@ -1759,19 +1859,9 @@ export class PaymentWizardComponent implements OnInit {
   }[]>(() => {
     const reg = this.registry();
     if (!reg) return [];
-    // Cosmetic only — a coloured glyph per rail keeps the entry screen visually
-    // varied without pulling in an icon library.
-    const cosmetic: Record<string, { icon: string; accent: string }> = {
-      sepa_inst:    { icon: '€',  accent: '#1b6fff' },
-      uk_fps:       { icon: '£',  accent: '#7a3df0' },
-      us_ach:       { icon: '$',  accent: '#0a8a3f' },
-      india_imps:   { icon: '₹',  accent: '#e07a00' },
-      brazil_pix:   { icon: 'R$', accent: '#00a36e' },
-      swift_mt103:  { icon: '⇄',  accent: '#5b6573' },
-    };
-    const order = ['sepa_inst', 'uk_fps', 'us_ach', 'india_imps', 'brazil_pix', 'swift_mt103'];
-    return order
-      .filter((id) => !!reg.rails[id])
+    // Order, icon and accent now come from registry.yaml — see each rail's
+    // `icon` and `accent` keys. Insertion order in the YAML defines display order.
+    return Object.keys(reg.rails)
       .map((id) => {
         const r = reg.rails[id] as unknown as Record<string, unknown>;
         const sched = r['schedule'] as Record<string, unknown> | undefined;
@@ -1780,8 +1870,8 @@ export class PaymentWizardComponent implements OnInit {
           name: String(r['display_name'] ?? id),
           region: String(r['region'] ?? ''),
           summary: String(r['summary'] ?? ''),
-          icon: cosmetic[id]?.icon ?? '●',
-          accent: cosmetic[id]?.accent ?? '#5b6573',
+          icon: String(r['icon'] ?? '●'),
+          accent: String(r['accent'] ?? '#5b6573'),
           speed: String(r['speed_text'] ?? ''),
           cost: String(r['cost_text'] ?? ''),
           avail247: Boolean(sched?.['operates_24x7']) && Boolean(sched?.['weekend_open']),
@@ -1954,6 +2044,21 @@ export class PaymentWizardComponent implements OnInit {
       });
       // Reset the silence timer every time we hear something. When it elapses,
       // we'll stop recognition and the auto-submit branch of onend fires.
+      this.armSilenceTimer();
+    };
+
+    // Speech-activity events — fire even when no words are recognized yet
+    // (e.g. user is humming, drawing breath, mid-syllable). Reset the silence
+    // timer so we don't auto-submit DURING active speech.
+    rec.onspeechstart = () => {
+      this.armSilenceTimer();
+    };
+    rec.onaudiostart = () => {
+      this.armSilenceTimer();
+    };
+    // When the API thinks the user stopped speaking, START the silence countdown
+    // fresh — this is the "user finished" signal.
+    rec.onspeechend = () => {
       this.armSilenceTimer();
     };
 
@@ -2273,10 +2378,28 @@ export class PaymentWizardComponent implements OnInit {
     ]);
   }
 
+  /** Phrases that mean "wipe everything and start fresh" — intercepted in
+   *  send() so the user can restart the wizard hands-free via voice or chat
+   *  without having to reach for the header button. */
+  private readonly RESTART_PATTERN =
+    /^\s*(restart|reset|start over|new payment|cancel|clear|begin again|scrap (this|that))\s*[.!?]?\s*$/i;
+
   // ── Chat send → backend → apply tool calls ─────────────────────── //
   send(): void {
     const text = this.draft().trim();
     if (!text || this.sending()) return;
+
+    // Chat-based restart — match before sending anything to the backend.
+    if (this.RESTART_PATTERN.test(text)) {
+      this.draft.set('');
+      this.reset();
+      this.chat.set([{
+        kind: 'system',
+        text: 'Conversation cleared. Start your next payment.',
+      }]);
+      return;
+    }
+
     this.draft.set('');
     this.chat.update((c) => [...c, { kind: 'user', text }]);
     this.sending.set(true);

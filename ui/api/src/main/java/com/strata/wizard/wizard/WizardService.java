@@ -90,7 +90,7 @@ public class WizardService {
             RULES
             1. For every fact the user stated, emit set_field. Use the exact field_id from available_fields. Confidence 0.95+ when explicit, 0.6–0.8 when inferred.
             2. If no rail is selected AND candidates is non-empty, emit select_rail with the first candidate.
-            3. `rail_id` MUST be one of the strings in `candidates`. NEVER invent rail names like "uk_to_eu" or "sepa". The ONLY valid values are: sepa_inst, uk_fps, us_ach, india_imps, brazil_pix, swift_mt103. CRITICAL: `uk_fps` is for UK→UK GBP only (domestic). A GBP payment from UK to anywhere else is cross-border and MUST use `swift_mt103`. Same for `us_ach` (US→US USD only) and `india_imps` (India domestic only).
+            3. `rail_id` MUST be one of the strings in `candidates`. NEVER invent rail names like "uk_to_eu" or "sepa". The ONLY valid values are the rail IDs from the registry (see `valid_rail_ids` in the message). CRITICAL: `uk_fps` is for UK→UK GBP only (domestic). A GBP payment from UK to anywhere else is cross-border and MUST use `swift_mt103`. Same for `us_ach` (US→US USD only) and `india_imps` (India domestic only).
             4. After a rail is selected, only set fields that exist on that rail.
             5. If something is missing or ambiguous, emit ask.
             6. Country codes ISO 3166-1 alpha-2 (DE, GB, US, IN, BR). Currency codes ISO 4217 uppercase. Amounts as plain numbers.
@@ -189,6 +189,7 @@ public class WizardService {
         String userContent;
         try {
             userContent = "available_fields: " + availableFields + "\n"
+                    + "valid_rail_ids: " + registry.rails().keySet() + "\n"
                     + "form_state: " + json.writeValueAsString(form) + "\n"
                     + "candidates: " + candidates.stream().map(Selector.Candidate::rail_id).toList() + "\n"
                     + "matched_beneficiaries: " + json.writeValueAsString(beneficiaryMatches) + "\n"

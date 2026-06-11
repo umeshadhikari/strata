@@ -79,6 +79,8 @@ rails:
     region: "EU/EEA"
     countries: [DE, FR, NL, IT, ES, BE, AT, IE, PT, FI, GR, LU, EE, LV, LT, SK, SI, CY, MT, HR]
     currencies: [EUR]
+    icon: "€"
+    accent: "#1b6fff"
     settlement: instant
     speed_text: "Instant (~10s)"
     cost_text: "Free"
@@ -126,6 +128,8 @@ rails:
     region: "United Kingdom"
     countries: [GB]
     currencies: [GBP]
+    icon: "£"
+    accent: "#7a3df0"
     settlement: instant
     speed_text: "Instant (seconds)"
     cost_text: "Free"
@@ -171,6 +175,8 @@ rails:
     region: "United States"
     countries: [US]
     currencies: [USD]
+    icon: "$"
+    accent: "#0a8a3f"
     settlement: next_day
     speed_text: "Next business day"
     cost_text: "~$0.25 per payment"
@@ -214,6 +220,8 @@ rails:
     region: "India"
     countries: [IN]
     currencies: [INR]
+    icon: "₹"
+    accent: "#e07a00"
     settlement: instant
     speed_text: "Instant (24/7)"
     cost_text: "Free for UPI, ₹2.50–25 for IMPS"
@@ -267,6 +275,8 @@ rails:
     region: "Brazil"
     countries: [BR]
     currencies: [BRL]
+    icon: "R$"
+    accent: "#00a36e"
     settlement: instant
     speed_text: "Instant (24/7)"
     cost_text: "Free"
@@ -300,6 +310,8 @@ rails:
     region: "Cross-border"
     countries: [WORLDWIDE]
     currencies: [USD, EUR, GBP, JPY, CHF, AUD, CAD, SGD, HKD, NZD, SEK, NOK, DKK]
+    icon: "⇄"
+    accent: "#5b6573"
     settlement: 1_3_business_days
     speed_text: "1–3 business days"
     cost_text: "~$20–50 + correspondent bank fees"
