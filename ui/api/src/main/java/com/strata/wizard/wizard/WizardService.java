@@ -112,11 +112,10 @@ public class WizardService {
             User: "use my Barclays beneficiary"   (search-only — bank_alias match → Smith & Holland LLP)
             You: tool-call set_field beneficiary_name="Smith & Holland LLP" 0.99; set_field beneficiary_country="GB" 0.99; set_field currency="GBP" 0.99; select_rail rail_id="uk_fps" why="Saved counterparty via bank alias 'Barclays'."; set_field sort_code="20-30-40" 0.99; set_field account_number="12345678" 0.99; ask field_id="amount" prompt="How much?".
 
-            User: "pay from OPS GBP"   (search-only — matched_debit_accounts returns Operations GBP)
-            You: tool-call set_field debit_account_id=101 0.99; set_field currency="GBP" 0.95; ask field_id="beneficiary_name" prompt="Who's the beneficiary?".
+            User: "pay from OPS GBP"   (search-only — matched_debit_accounts returns one entry)
+            You: tool-call set_field debit_account_id=<the "id" value from matched_debit_accounts[0]> 0.99; set_field currency="GBP" 0.95; ask field_id="beneficiary_name" prompt="Who's the beneficiary?".
 
-            User: "treasury USD account"   (search-only — picker filter)
-            You: tool-call set_field debit_account_id=204 0.95; set_field currency="USD" 0.95; ask field_id="beneficiary_name" prompt="Who's the beneficiary?".
+            CRITICAL: debit_account_id MUST be one of the integer ids in matched_debit_accounts. NEVER invent a number. If matched_debit_accounts is empty, do NOT set debit_account_id at all — emit `ask` instead.
             """;
 
     private final RailsRegistry registry;
@@ -290,6 +289,23 @@ public class WizardService {
                         derived.put("_bank_name", bank.name());
                     }
                 }
+                // The LLM sometimes invents numeric IDs (e.g. "102") for
+                // debit_account_id when it should be picking from the directory.
+                // Reject anything that doesn't map to a real account so the
+                // picker doesn't show a blank field downstream — the
+                // deterministic cascade below will then fill in the correct id.
+                if ("debit_account_id".equals(fid) && value != null) {
+                    int requested = toInt(value);
+                    boolean exists = Directory.DEBIT_ACCOUNTS.stream()
+                            .anyMatch(a -> toInt(a.get("id")) == requested);
+                    if (!exists) {
+                        log.warn("Dropping set_field debit_account_id={} — no such account in directory", requested);
+                        validation.add(new TurnResponse.ValidationResult(
+                                "debit_account_id", false,
+                                "Model picked account id " + requested + " which doesn't exist — falling back to the directory match."));
+                        continue;
+                    }
+                }
             }
             accepted.add(tc);
         }
@@ -398,5 +414,13 @@ public class WizardService {
             try { return Double.parseDouble(s); } catch (NumberFormatException ignored) {}
         }
         return null;
+    }
+
+    private static int toInt(Object v) {
+        if (v instanceof Number n) return n.intValue();
+        if (v instanceof String s && !s.isBlank()) {
+            try { return Integer.parseInt(s.trim()); } catch (NumberFormatException ignored) {}
+        }
+        return -1;
     }
 }

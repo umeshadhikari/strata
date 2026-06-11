@@ -2492,6 +2492,20 @@ export class PaymentWizardComponent implements OnInit {
       }
     } else if (call.name === 'select_rail') {
       const id = call.args['rail_id'] as string;
+      const why = (call.args['why'] as string) ?? '';
+      const previousId = this.formState().rail_id;
+      // If the rail is genuinely CHANGING from something we'd previously
+      // chosen — not the first selection — drop a prominent system note so
+      // the user understands why the form just morphed under them.
+      if (previousId && previousId !== id) {
+        const fromName = this.railName(previousId);
+        const toName = this.railName(id);
+        const reason = why ? ` Reason: ${why}` : '';
+        this.chat.update((c) => [...c, {
+          kind: 'system',
+          text: `Rail changed: ${fromName} → ${toName}.${reason}`,
+        }]);
+      }
       this.formState.update((s) => ({ ...s, rail_id: id }));
     }
     // 'ask' and 'explain' have no form-state effect — they render in chat.
