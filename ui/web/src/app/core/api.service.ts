@@ -73,6 +73,18 @@ export class ApiService {
     return this.http.get<SuggestionsResponse>(`${BASE}/wizard/suggestions`);
   }
 
+  /** List Ollama chat models + currently-active one (powers the gear-icon picker). */
+  listOllamaModels(): Observable<{ active: string; models: { name: string; size: number; modified_at: string }[] }> {
+    return this.http.get<{ active: string; models: { name: string; size: number; modified_at: string }[] }>(
+      `${BASE}/wizard/models`,
+    );
+  }
+
+  /** Swap the active Ollama chat model at runtime. */
+  setOllamaModel(model: string): Observable<{ active: string }> {
+    return this.http.post<{ active: string }>(`${BASE}/wizard/model`, { model });
+  }
+
   selectRails(country: string | null, currency: string | null, amount: number | null):
       Observable<{candidates: RailCandidate[]}> {
     return this.http.post<{candidates: RailCandidate[]}>(

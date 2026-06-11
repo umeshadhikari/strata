@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Thin Ollama HTTP client. Talks to the OpenAI-compatible
@@ -45,12 +46,36 @@ public class OllamaClient {
 
     private final AppSettings settings;
     private final RestClient client;
+    /** Active chat model. Initialized from application.yaml, swappable at runtime
+     *  via the /api/wizard/model endpoint so demo operators can switch models
+     *  from the UI without recreating the container. */
+    private final AtomicReference<String> activeModel;
 
     public OllamaClient(AppSettings settings) {
         this.settings = settings;
         this.client = RestClient.builder()
                 .baseUrl(settings.getOllama().getUrl())
                 .build();
+        this.activeModel = new AtomicReference<>(settings.getOllama().getModel());
+    }
+
+    /** Currently active chat model name (e.g. "llama3.1:8b"). */
+    public String getActiveModel() {
+        return activeModel.get();
+    }
+
+    /** Swap the chat model at runtime. The next chatCompletion call uses it. */
+    public void setActiveModel(String model) {
+        log.info("Switching active Ollama model to '{}'", model);
+        activeModel.set(model);
+    }
+
+    /** List models Ollama currently has locally (calls /api/tags). */
+    public JsonNode listModels() {
+        return client.get()
+                .uri("/api/tags")
+                .retrieve()
+                .body(JsonNode.class);
     }
 
     @Bulkhead(name = "ollama")
@@ -60,7 +85,7 @@ public class OllamaClient {
                                    String userContent,
                                    List<Map<String, Object>> tools) {
         Map<String, Object> body = Map.of(
-                "model", settings.getOllama().getModel(),
+                "model", activeModel.get(),
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
                         Map.of("role", "user", "content", userContent)

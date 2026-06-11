@@ -455,7 +455,47 @@ interface SubmitConfirmation {
         <section class="pane chat-pane">
           <header class="pane-head">
             <h2>Assistant</h2>
-            <span class="muted">qwen2.5:7b</span>
+            <div class="model-picker" [class.open]="showModelPicker()">
+              <button
+                type="button"
+                class="model-btn"
+                (click)="toggleModelPicker()"
+                title="Switch Ollama model"
+              >
+                <span class="model-name">{{ activeModel() || 'no model' }}</span>
+                <span class="model-caret">⚙</span>
+              </button>
+              @if (showModelPicker()) {
+                <div class="model-pop">
+                  <div class="model-pop-head">Switch model</div>
+                  @if (availableModels().length === 0) {
+                    <div class="model-empty">
+                      No chat models found in Ollama. Pull one with
+                      <code>docker exec ollama ollama pull qwen2.5:7b</code>
+                    </div>
+                  } @else {
+                    @for (m of availableModels(); track m.name) {
+                      <button
+                        type="button"
+                        class="model-row"
+                        [class.model-active]="m.name === activeModel()"
+                        [disabled]="switchingModel()"
+                        (click)="switchModel(m.name)"
+                      >
+                        <span class="model-row-name">{{ m.name }}</span>
+                        <span class="model-row-size">{{ formatBytes(m.size) }}</span>
+                        @if (m.name === activeModel()) {
+                          <span class="model-check">✓</span>
+                        }
+                      </button>
+                    }
+                  }
+                  <div class="model-pop-foot">
+                    <button type="button" class="model-refresh" (click)="loadModels()">↻ Refresh</button>
+                  </div>
+                </div>
+              }
+            </div>
           </header>
 
           <div #log class="chat-log">
@@ -1050,6 +1090,119 @@ interface SubmitConfirmation {
       }
 
       .chat-pane { background: var(--bg-card); }
+
+      /* ─── Ollama model picker ─── */
+      .model-picker { position: relative; }
+      .model-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        color: var(--text-muted, #5f6b7a);
+        background: var(--bg-card-2, #f1f3f5);
+        border: 1px solid var(--border, #d8dde3);
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: border-color 120ms ease, background 120ms ease;
+      }
+      .model-btn:hover {
+        border-color: var(--accent, #0a8a3f);
+        color: var(--text-body, #1f2933);
+      }
+      .model-name { font-weight: 600; }
+      .model-caret { font-size: 12px; opacity: 0.8; }
+      .model-picker.open .model-caret { color: var(--accent, #0a8a3f); }
+
+      .model-pop {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 100;
+        width: 280px;
+        background: #fff;
+        border: 1px solid var(--border, #d8dde3);
+        border-radius: 6px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+        overflow: hidden;
+        animation: pop-fade-in 140ms ease;
+      }
+      @keyframes pop-fade-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to   { opacity: 1; transform: none; }
+      }
+      .model-pop-head {
+        padding: 10px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted, #5f6b7a);
+        background: var(--bg-card-2, #f7f9fb);
+        border-bottom: 1px solid var(--border, #d8dde3);
+      }
+      .model-empty {
+        padding: 12px;
+        font-size: 12px;
+        color: var(--text-muted, #5f6b7a);
+        line-height: 1.4;
+      }
+      .model-empty code {
+        display: block;
+        margin-top: 6px;
+        padding: 4px 6px;
+        background: var(--bg-card-2, #f1f3f5);
+        border-radius: 3px;
+        font-size: 11px;
+        font-family: ui-monospace, Menlo, Monaco, monospace;
+      }
+      .model-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 9px 12px;
+        background: #fff;
+        border: none;
+        border-bottom: 1px solid var(--bg-card-2, #eef0f3);
+        font-family: inherit;
+        font-size: 12.5px;
+        color: var(--text-body, #1f2933);
+        cursor: pointer;
+        text-align: left;
+        transition: background 100ms ease;
+      }
+      .model-row:hover:not(:disabled) { background: var(--bg-card-2, #f7f9fb); }
+      .model-row:disabled { cursor: progress; opacity: 0.6; }
+      .model-row.model-active {
+        background: var(--accent-soft, #def5e4);
+        color: var(--accent, #0a8a3f);
+        font-weight: 600;
+      }
+      .model-row-name { flex: 1; }
+      .model-row-size {
+        font-size: 11px;
+        color: var(--text-muted, #5f6b7a);
+        font-variant-numeric: tabular-nums;
+      }
+      .model-row.model-active .model-row-size { color: var(--accent, #0a8a3f); }
+      .model-check { color: var(--accent, #0a8a3f); font-weight: 700; }
+      .model-pop-foot {
+        padding: 6px 12px;
+        background: var(--bg-card-2, #f7f9fb);
+        border-top: 1px solid var(--border, #d8dde3);
+        text-align: right;
+      }
+      .model-refresh {
+        background: none;
+        border: none;
+        font-size: 11px;
+        color: var(--text-muted, #5f6b7a);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .model-refresh:hover { color: var(--accent, #0a8a3f); }
       .chat-log {
         flex: 1;
         overflow-y: auto;
@@ -1659,6 +1812,16 @@ export class PaymentWizardComponent implements OnInit {
   submitting = signal(false);
   submitResult = signal<SubmitConfirmation | null>(null);
 
+  // ── Ollama model picker ──────────────────────────────────────────── //
+  /** Visibility of the gear-icon popover. */
+  showModelPicker = signal(false);
+  /** Currently active Ollama model — read from /api/wizard/models on init. */
+  activeModel = signal<string>('');
+  /** Chat-capable models Ollama has locally. */
+  availableModels = signal<{ name: string; size: number; modified_at: string }[]>([]);
+  /** True while a model switch request is in flight. */
+  switchingModel = signal(false);
+
   // ── Voice dictation (Web Speech API) ───────────────────────────── //
   /** 'idle' = mic shown, click to start. 'listening' = currently capturing. */
   voiceState = signal<'idle' | 'listening'>('idle');
@@ -1692,6 +1855,62 @@ export class PaymentWizardComponent implements OnInit {
       },
     });
     this.setupVoice();
+    this.loadModels();
+  }
+
+  // ── Model picker ─────────────────────────────────────────────── //
+
+  /** Pull the model list from the api. Called on init + Refresh button click. */
+  loadModels(): void {
+    this.api.listOllamaModels().subscribe({
+      next: (r) => {
+        this.activeModel.set(r.active || '');
+        this.availableModels.set(r.models || []);
+      },
+      error: () => {
+        // Don't blow up — just keep whatever we had. The picker shows "no
+        // chat models found" if availableModels stays empty.
+      },
+    });
+  }
+
+  toggleModelPicker(): void {
+    if (this.showModelPicker()) {
+      this.showModelPicker.set(false);
+    } else {
+      this.loadModels();
+      this.showModelPicker.set(true);
+    }
+  }
+
+  /** POST /api/wizard/model — swap immediately, no container restart. */
+  switchModel(model: string): void {
+    if (model === this.activeModel() || this.switchingModel()) return;
+    this.switchingModel.set(true);
+    this.api.setOllamaModel(model).subscribe({
+      next: (r) => {
+        this.activeModel.set(r.active);
+        this.switchingModel.set(false);
+        this.showModelPicker.set(false);
+        this.chat.update((c) => [...c, {
+          kind: 'system',
+          text: `Switched to ${r.active}. The next message will use this model.`,
+        }]);
+        this.scrollChat();
+      },
+      error: (e) => {
+        this.switchingModel.set(false);
+        this.lastError.set(e?.error?.detail ?? e?.message ?? 'failed to switch model');
+      },
+    });
+  }
+
+  /** "4.9 GB" / "562 MB" formatting for the model row size column. */
+  formatBytes(bytes: number): string {
+    if (!bytes) return '';
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+    if (bytes >= 1e6) return Math.round(bytes / 1e6) + ' MB';
+    return Math.round(bytes / 1e3) + ' KB';
   }
 
   // ── Voice dictation ───────────────────────────────────────────── //
