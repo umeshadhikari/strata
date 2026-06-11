@@ -28,7 +28,9 @@ strata:
   ollama:
     url: ${OLLAMA_URL:http://host.docker.internal:11434}
     model: ${OLLAMA_MODEL:qwen2.5:7b}
-    timeout-seconds: 60
+    # 5 minutes — covers cold model loads (8B-20B params load in 30-90s on CPU)
+    # plus generous per-turn inference time. Match nginx /api/ proxy_read_timeout.
+    timeout-seconds: 300
   pg:
     schema: ${PGSCHEMA:data_mart}
 

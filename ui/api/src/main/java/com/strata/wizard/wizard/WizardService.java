@@ -79,9 +79,13 @@ public class WizardService {
 
             CRITICAL: You MUST invoke the tools via the function-calling interface. Do NOT write "set_field(...)" as plain text. Multiple tool calls per response are allowed and expected.
 
-            If the context contains `matched_beneficiaries` with one entry, that's a saved counterparty the user is referring to. Fan ALL its data into set_field calls: beneficiary_name, beneficiary_country, the preferred_currency, and every key in its `fields` map. Also call select_rail with its `preferred_rail`. Use high confidence (0.99) on these.
+            SEARCH-STYLE UTTERANCES — the user is often just looking up a counterparty or account by voice/typing, without giving any other details. Handle these the same way as a full payment description: act on whatever match was found, even when the amount, currency, etc. are missing.
 
-            If the context contains `matched_debit_accounts` with at least one entry, pick the one whose currency matches the payment currency (or the first if none do) and set debit_account_id to its id with confidence 0.95+.
+            If the context contains `matched_beneficiaries` with one entry, that's a saved counterparty the user is referring to. Fan ALL its data into set_field calls: beneficiary_name, beneficiary_country, the preferred_currency, and every key in its `fields` map. Also call select_rail with its `preferred_rail`. Use high confidence (0.99) on these. THIS APPLIES EVEN WHEN THE USER ONLY MENTIONED THE BENEFICIARY NAME OR THEIR BANK ("send to Acme", "find Smith Holland", "use my Barclays one"). Do NOT wait for amount/currency before populating fields — fill what we know now and `ask` for the rest.
+
+            If the context contains `matched_beneficiaries` with MULTIPLE entries (the user's phrase was ambiguous), emit `ask field_id="beneficiary_name"` with `choices` containing each candidate's display name — do NOT guess.
+
+            If the context contains `matched_debit_accounts` with at least one entry, pick the one whose currency matches the payment currency (or the first if none do) and set debit_account_id to its id with confidence 0.95+. THIS APPLIES EVEN WHEN THE USER ONLY SAID "use OPS GBP" or "pay from my treasury USD" — set the account immediately, no need to wait for the beneficiary.
 
             RULES
             1. For every fact the user stated, emit set_field. Use the exact field_id from available_fields. Confidence 0.95+ when explicit, 0.6–0.8 when inferred.
@@ -101,6 +105,18 @@ public class WizardService {
 
             User: "send a supplier payment from uk to spain"
             You: tool-call set_field beneficiary_country="ES" 0.95; set_field currency="GBP" 0.7; select_rail rail_id="swift_mt103" why="GBP from UK to Spain is cross-border — uk_fps is UK-domestic only."; ask field_id="amount" prompt="How much?".
+
+            User: "send to Smith and Holland"   (search-only — matched_beneficiaries returns the LLP record)
+            You: tool-call set_field beneficiary_name="Smith & Holland LLP" 0.99; set_field beneficiary_country="GB" 0.99; set_field currency="GBP" 0.99; select_rail rail_id="uk_fps" why="Saved counterparty's preferred rail."; set_field sort_code="20-30-40" 0.99; set_field account_number="12345678" 0.99; ask field_id="amount" prompt="How much?".
+
+            User: "use my Barclays beneficiary"   (search-only — bank_alias match → Smith & Holland LLP)
+            You: tool-call set_field beneficiary_name="Smith & Holland LLP" 0.99; set_field beneficiary_country="GB" 0.99; set_field currency="GBP" 0.99; select_rail rail_id="uk_fps" why="Saved counterparty via bank alias 'Barclays'."; set_field sort_code="20-30-40" 0.99; set_field account_number="12345678" 0.99; ask field_id="amount" prompt="How much?".
+
+            User: "pay from OPS GBP"   (search-only — matched_debit_accounts returns Operations GBP)
+            You: tool-call set_field debit_account_id=101 0.99; set_field currency="GBP" 0.95; ask field_id="beneficiary_name" prompt="Who's the beneficiary?".
+
+            User: "treasury USD account"   (search-only — picker filter)
+            You: tool-call set_field debit_account_id=204 0.95; set_field currency="USD" 0.95; ask field_id="beneficiary_name" prompt="Who's the beneficiary?".
             """;
 
     private final RailsRegistry registry;

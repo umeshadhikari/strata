@@ -11,10 +11,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Duration;
 
 import java.util.List;
 import java.util.Map;
@@ -53,8 +56,15 @@ public class OllamaClient {
 
     public OllamaClient(AppSettings settings) {
         this.settings = settings;
+        // Generous timeouts because CPU inference for 8B+ models can take 60-180s
+        // per turn, and the FIRST request after a model swap has to load weights
+        // (5-13 GB) into RAM. 5 minutes covers both comfortably.
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
+        factory.setReadTimeout((int) Duration.ofMinutes(5).toMillis());
         this.client = RestClient.builder()
                 .baseUrl(settings.getOllama().getUrl())
+                .requestFactory(factory)
                 .build();
         this.activeModel = new AtomicReference<>(settings.getOllama().getModel());
     }
