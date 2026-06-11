@@ -293,6 +293,75 @@ public class WizardService {
             accepted.add(tc);
         }
 
+        // ── Deterministic directory cascade ───────────────────────────── //
+        // Small models (llama3.1:8b, qwen 3b) often emit only beneficiary_name
+        // when matched_beneficiaries has one hit, leaving the other 4-6 fields
+        // empty. Same with debit accounts: the model sets the name but forgets
+        // the id. Fan the rest out here so the user gets the same result they
+        // would by clicking the typeahead row manually.
+        //
+        // Already-set fields by the LLM are NOT overwritten — the model's
+        // explicit choices win.
+        Set<String> alreadySetFields = new HashSet<>();
+        for (ToolCall tc : accepted) {
+            if ("set_field".equals(tc.name())) {
+                Object fid = tc.args().get("field_id");
+                if (fid instanceof String s) alreadySetFields.add(s);
+            }
+        }
+
+        // Beneficiary cascade — exactly one match → full fan-out.
+        if (beneficiaryMatches.size() == 1) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = beneficiaryMatches.get(0);
+            String benRail = (String) b.get("preferred_rail");
+            String benCountry = (String) b.get("country");
+            String benCurrency = (String) b.get("preferred_currency");
+            String benName = (String) b.get("name");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> benFields = (Map<String, Object>) b.get("fields");
+
+            // Lock rail to the beneficiary's preferred rail so the cascade fields
+            // align with the right form schema.
+            if (!railLocked && benRail != null && registry.getRail(benRail) != null) {
+                if (!railWasPicked || !benRail.equals(effectiveRail)) {
+                    accepted.add(new ToolCall("select_rail", Map.of(
+                            "rail_id", benRail,
+                            "why", "Saved counterparty's preferred rail (" + benName + ")."
+                    )));
+                    effectiveRail = benRail;
+                    railWasPicked = true;
+                }
+            }
+            // Top-level common fields.
+            cascade(accepted, alreadySetFields, "beneficiary_name", benName);
+            cascade(accepted, alreadySetFields, "beneficiary_country", benCountry);
+            cascade(accepted, alreadySetFields, "currency", benCurrency);
+            // Rail-specific fields from the beneficiary's `fields` map.
+            if (benFields != null) {
+                for (var entry : benFields.entrySet()) {
+                    Map<String, Object> def = registry.fieldDef(effectiveRail, entry.getKey());
+                    if (def == null) continue; // skip fields that don't apply on this rail
+                    cascade(accepted, alreadySetFields, entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        // Debit-account cascade — exactly one match (after the currency filter)
+        // → set the account id. The frontend already syncs the picker display
+        // text from the id.
+        if (accountMatches.size() == 1 && !alreadySetFields.contains("debit_account_id")) {
+            Object accId = accountMatches.get(0).get("id");
+            if (accId != null) {
+                accepted.add(new ToolCall("set_field", Map.of(
+                        "field_id", "debit_account_id",
+                        "value", accId,
+                        "confidence", 0.98
+                )));
+                alreadySetFields.add("debit_account_id");
+            }
+        }
+
         // Deterministic fallback: if the model didn't pick a valid rail AND we
         // have a candidate from the selector, synthesise the select_rail so the
         // form always morphs to *something* sensible. The "why" makes it clear
@@ -307,6 +376,19 @@ public class WizardService {
         }
 
         return new TurnResponse(accepted, candidates, availableFields, validation, derived, rawMessage);
+    }
+
+    /** Append a set_field tool call, but only if the LLM didn't already set it. */
+    private static void cascade(List<ToolCall> accepted, Set<String> already,
+                                String fieldId, Object value) {
+        if (value == null || "".equals(value)) return;
+        if (already.contains(fieldId)) return;
+        accepted.add(new ToolCall("set_field", Map.of(
+                "field_id", fieldId,
+                "value", value,
+                "confidence", 0.98
+        )));
+        already.add(fieldId);
     }
 
     private static Double toDouble(Object v) {
