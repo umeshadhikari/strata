@@ -66,45 +66,7 @@ import { TablePage } from '../../core/models';
       <p class="muted">Loading…</p>
     }
   `,
-  styles: [
-    `
-      .crumbs { font-size: 13px; margin-bottom: 6px; }
-      h1.mono {
-        font-family: 'Menlo', 'Consolas', monospace;
-        font-size: 22px;
-        margin: 0 0 12px;
-      }
-      .meta { margin-bottom: 10px; font-size: 12.5px; }
-      .table-wrap {
-        background: var(--bg-card);
-        border: 1px solid var(--rule);
-        border-radius: 6px;
-        overflow: auto;
-        max-height: 65vh;
-      }
-      table { border-collapse: collapse; width: max-content; min-width: 100%; }
-      th, td {
-        padding: 8px 14px;
-        border-bottom: 1px solid var(--rule);
-        font-size: 12.5px;
-        white-space: nowrap;
-      }
-      th {
-        background: var(--bg-card-2);
-        color: var(--text-muted);
-        font-weight: 600;
-        position: sticky;
-        top: 0;
-      }
-      td { font-family: 'Menlo', 'Consolas', monospace; }
-      .pager {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        margin-top: 14px;
-      }
-    `,
-  ],
+  styleUrls: ['./table-detail.component.scss'],
 })
 export class TableDetailComponent {
   @Input({ required: true }) name!: string;

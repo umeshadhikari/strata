@@ -48,36 +48,7 @@ import { TableSummary } from '../../core/models';
       </div>
     }
   `,
-  styles: [
-    `
-      h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
-      .table-card {
-        background: var(--bg-card);
-        border: 1px solid var(--rule);
-        border-radius: 6px;
-        overflow: hidden;
-        margin-top: 16px;
-      }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
-      th { background: var(--bg-card-2); font-weight: 600; font-size: 12.5px; color: var(--text-muted); }
-      tbody tr { cursor: pointer; }
-      tbody tr:hover { background: var(--bg-card-2); }
-      .mono { font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; font-size: 13px; }
-      .num { text-align: right; font-variant-numeric: tabular-nums; }
-      .badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-size: 11px;
-        font-weight: 600;
-        background: var(--bg-card-2);
-        color: var(--text-body);
-        &.fact { background: var(--accent-soft); color: #0E6B3A; }
-        &.dimension { background: var(--primary-soft); color: var(--primary); }
-      }
-    `,
-  ],
+  styleUrls: ['./tables.component.scss'],
 })
 export class TablesComponent {
   private api = inject(ApiService);

@@ -175,23 +175,7 @@ const COUNTRIES: Record<string, string> = {
       <p class="muted">Loading form options…</p>
     }
   `,
-  styles: [
-    `
-      h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px 18px;
-        max-width: 720px;
-        margin-top: 18px;
-      }
-      .span-2 { grid-column: span 2; }
-      .field { display: flex; flex-direction: column; gap: 6px; }
-      label { font-size: 12px; color: var(--text-muted); }
-      .actions { display: flex; gap: 12px; margin-top: 6px; }
-      .success-card { border-color: var(--accent); background: var(--accent-soft); }
-    `,
-  ],
+  styleUrls: ['./new-payment.component.scss'],
 })
 export class NewPaymentComponent {
   private api = inject(ApiService);
